@@ -4,7 +4,7 @@
 export type FirmwareVariant = 's3-8mb' | 's3-4mb' | 'c6';
 export type TrainMode = 'pose-smoke' | 'pose' | 'room';
 export type Split = 'chronological' | 'blocked-gap' | 'grouped-subject' | 'grouped-session' | 'random-frame';
-export type DoctorGroup = 'runtime' | 'harness' | 'hosts' | 'repo' | 'rust' | 'python' | 'firmware' | 'serial' | 'sensing' | 'kernel';
+export type DoctorGroup = 'runtime' | 'harness' | 'hosts' | 'repo' | 'rust' | 'python' | 'firmware' | 'serial' | 'devices' | 'remote' | 'sensing' | 'kernel';
 
 /** Every tool resolves to structured JSON; failures are `ok: false` with a reason. */
 export interface ToolResult {
@@ -98,6 +98,16 @@ export interface RuView {
     run(args?: TrainArgs): Promise<ToolResult>;
     gate(report: TrainingReport): Promise<GateResult>;
     calibrate(args?: { step?: 'baseline' | 'enroll' | 'train-room' | 'room-watch'; args?: string[]; confirm?: boolean }): Promise<ToolResult>;
+  };
+  devices: {
+    scan(): Promise<ToolResult>;
+    esp32(args?: { udp_port?: number; bind?: '0.0.0.0' | '127.0.0.1' | '::' | '::1'; seconds?: number; max_packets?: number }): Promise<ToolResult>;
+    mmwave(args: { port: string; model?: 'auto' | 'mr60bha2' | 'ld2410'; seconds?: number }): Promise<ToolResult>;
+    lidar(args: { source: 'rplidar'; port: string; baud?: 115200 | 256000 | 460800 | 921600; seconds?: number } | { source: 'iphone'; url: string; seconds?: number }): Promise<ToolResult>;
+  };
+  hosts: {
+    list(): Promise<ToolResult>;
+    run(host: string, tool: string, args?: Record<string, unknown>): Promise<ToolResult>;
   };
   kernel: {
     selfTest(args?: { backend?: 'wasm' | 'napi' | 'auto'; seconds?: number }): Promise<ToolResult>;

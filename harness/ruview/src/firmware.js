@@ -240,10 +240,22 @@ export async function listSerialPorts(deps) {
   const r = await deps.exec(python, ['-m', 'serial.tools.list_ports', '-v'], { timeoutMs: 20_000 });
   if (/No module named '?serial/i.test(r.stderr)) return { ok: false, reason: 'pyserial_missing', ports: [] };
   const ports = [];
-  for (const line of r.stdout.split(/\r?\n/)) {
-    const m = /^(COM\d+|\/dev\/\S+)/.exec(line.trim());
-    if (m) ports.push({ port: m[1], description: line.trim().slice(m[1].length).trim().slice(0, 200) });
-    else if (ports.length && line.trim()) ports.at(-1).detail = line.trim().slice(0, 200);
+  for (const raw of r.stdout.split(/\r?\n/)) {
+    const line = raw.trim();
+    const m = /^(COM\d+|\/dev\/\S+)/.exec(line);
+    if (m) { ports.push({ port: m[1], description: line.slice(m[1].length).trim().slice(0, 200) }); continue; }
+    const current = ports.at(-1);
+    if (!current || !line) continue;
+    const desc = /^desc:\s*(.*)$/.exec(line);
+    const hwid = /^hwid:\s*(.*)$/.exec(line);
+    if (desc) current.description = desc[1].slice(0, 200);
+    else if (hwid) {
+      current.hwid = hwid[1].slice(0, 200);
+      const ids = /VID:PID=([0-9A-Fa-f]{4}):([0-9A-Fa-f]{4})/.exec(hwid[1]);
+      if (ids) { current.vid = ids[1].toUpperCase(); current.pid = ids[2].toUpperCase(); }
+      const ser = /SER=(\S+)/.exec(hwid[1]);
+      if (ser) current.serial = ser[1].slice(0, 64);
+    }
   }
   if (!r.ok && !ports.length) return { ok: false, reason: 'enumeration_failed', detail: (r.stderr || r.error || '').slice(-400), ports };
   return { ok: true, ports };

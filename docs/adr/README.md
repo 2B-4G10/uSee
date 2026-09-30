@@ -2,6 +2,8 @@
 
 Latest proposed decisions:
 
+- [ADR-374: Remote host access over SSH (read-only)](ADR-374-remote-host-access-over-ssh.md)
+- [ADR-373: Host device access layer — ESP32, mmWave, LiDAR](ADR-373-host-device-access-layer.md)
 - [ADR-372: Structured debugging doctor](ADR-372-structured-debugging-doctor.md)
 - [ADR-371: Harness training runner and mean-pose evidence gate](ADR-371-harness-training-runner-and-evidence-gate.md)
 - [ADR-370: Cross-platform, verified ESP32 firmware flashing from npm](ADR-370-cross-platform-firmware-flashing.md)

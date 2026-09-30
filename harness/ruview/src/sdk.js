@@ -69,6 +69,19 @@ export function createRuView({ strict = false, deps = OPERATOR_DEPS } = {}) {
       calibrate: (args = {}) => call('ruview_calibrate', args),
     }),
 
+    devices: Object.freeze({
+      scan: () => call('ruview_devices_scan'),
+      esp32: (args = {}) => call('ruview_esp32_capture', args),
+      mmwave: (args) => call('ruview_mmwave_read', args),
+      lidar: (args) => call('ruview_lidar_read', args),
+    }),
+
+    hosts: Object.freeze({
+      list: () => call('ruview_host_list'),
+      /** Run a read-only tool on a configured SSH host. */
+      run: (host, tool, args = {}) => call('ruview_host_run', { host, tool, args }),
+    }),
+
     kernel: Object.freeze({
       selfTest: (args = {}) => call('ruview_kernel_selftest', args),
       /** Load @ruvnet/ruview-kernel directly (optional package) for streaming analysis. */

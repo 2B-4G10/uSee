@@ -298,6 +298,33 @@ const CAPABILITIES = Object.freeze([
     ],
   },
   {
+    id: 'host-device-access',
+    name: 'Host device and remote host access',
+    topics: ['hardware', 'integrations', 'community'],
+    status: 'implemented',
+    evidence: 'POLICY',
+    summary: '@ruvnet/ruview reads ESP32 CSI nodes (serial and receive-only UDP), MR60BHA2 60 GHz and LD2410 24 GHz mmWave radars, RPLIDAR, and the iPhone LiDAR relay on the attached host, and runs read-only tools on SSH hosts with pinned keys and a pinned package version.',
+    sources: [
+      'docs/adr/ADR-373-host-device-access-layer.md',
+      'docs/adr/ADR-374-remote-host-access-over-ssh.md',
+      'harness/ruview/src/devices/esp32.js',
+      'harness/ruview/src/devices/mmwave.js',
+      'harness/ruview/src/devices/lidar.js',
+      'harness/ruview/src/remote.js',
+      'firmware/esp32-csi-node/main/mmwave_sensor.c',
+      'integrations/iphone-lidar/web/codec.mjs',
+    ],
+    validation: [
+      'cd harness/ruview && node --test test/devices.test.mjs test/remote.test.mjs',
+      'npx @ruvnet/ruview doctor --group serial,devices,remote',
+    ],
+    limitations: [
+      'Device tools must run on the machine the hardware is attached to; a cloud session cannot reach local USB.',
+      'Parsers are validated against firmware-derived byte streams and emulated devices; real-silicon captures are still required as hardware evidence.',
+      'mmWave heart/breathing values are the radar\'s own estimates, not RuView accuracy results.',
+    ],
+  },
+  {
     id: 'portable-compute-kernel',
     name: 'Portable compute kernel (WASM + napi-rs)',
     topics: ['sensing', 'community', 'deployment', 'testing'],

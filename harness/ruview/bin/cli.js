@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { realpathSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { argv } from 'node:process';
-import { runTool, listTools, findRepoRoot, OPERATOR_DEPS } from '../src/tools.js';
+import { runTool, listTools, findRepoRoot, OPERATOR_DEPS, isRemoteReadOnlyTool, resolveToolName } from '../src/tools.js';
+import { saveHost } from '../src/remote.js';
 import { formatDoctor, runDoctor, DOCTOR_GROUPS } from '../src/doctor.js';
 import { getHost } from '../src/hosts/index.js';
 import { makeProposal, searchBrain, verifyBrain } from '../src/brain.js';
@@ -35,11 +36,15 @@ const VERB_TO_TOOL = {
   train: 'ruview_train',
   'train-plan': 'ruview_train_plan',
   'train-gate': 'ruview_train_gate',
+  devices: 'ruview_devices_scan',
+  esp32: 'ruview_esp32_capture',
+  mmwave: 'ruview_mmwave_read',
+  lidar: 'ruview_lidar_read',
 };
 
 // Verbs whose kebab-case flags map 1:1 onto snake_case schema fields (ADR-369).
-const SNAKE_VERBS = new Set(['flash', 'flash-plan', 'train', 'train-plan', 'train-gate']);
-const NUMERIC_FLAGS = new Set(['baud', 'boot_log_seconds', 'samples', 'model_score', 'baseline_score', 'n_test']);
+const SNAKE_VERBS = new Set(['flash', 'flash-plan', 'train', 'train-plan', 'train-gate', 'devices', 'esp32', 'mmwave', 'lidar']);
+const NUMERIC_FLAGS = new Set(['baud', 'boot_log_seconds', 'samples', 'model_score', 'baseline_score', 'n_test', 'seconds', 'udp_port', 'max_packets']);
 const BOOLEAN_FLAGS = new Set(['confirm', 'cuda', 'allow_unverified']);
 
 function toSchemaArgs(flags) {
@@ -95,6 +100,19 @@ Firmware (ADR-370, cross-platform esptool):
   flash-plan --port <p> --bundle <dir> [--variant s3-8mb|s3-4mb|c6]   verify + print the plan
   flash --port <p> --bundle <dir> [--variant ...] [--baud 460800] --confirm
         [--boot-log-seconds 15] [--allow-unverified]     write flash, then capture boot evidence
+
+Devices (ADR-373) — run on the machine the hardware is attached to:
+  devices                                                classify USB serial devices (ESP32, mmWave, RPLIDAR)
+  esp32 [--udp-port 5005] [--seconds 10] [--bind 0.0.0.0]  receive + summarize ESP32 node UDP stream
+  mmwave --port <p> [--model auto|mr60bha2|ld2410] [--seconds 10]   60/24 GHz radar readout
+  lidar --source rplidar --port <p> [--baud 115200]      RPLIDAR scan summary
+  lidar --source iphone --url ws://HOST:8787/ws/lidar    iPhone LiDAR relay (token: RUVIEW_LIDAR_TOKEN)
+
+Remote hosts (ADR-374) — SSH, read-only tools only:
+  hosts add --name pi --ssh user@pi.local [--port 22] [--version X.Y.Z]
+  hosts list
+  hosts run --host pi --tool ruview_devices_scan [--args-json '{"seconds":10}']
+  call <tool> [--read-only] [--args-json '{...}']       generic schema-validated tool call
 
 Training (ADR-371):
   train-plan [--mode pose-smoke|pose|room] [...]         resolve the command, run nothing
@@ -250,6 +268,43 @@ export async function run(args) {
       }
     }
     case 'tools': pjson(listTools()); return 0;
+    case 'call': {
+      // Generic, schema-validated tool call (ADR-374). `--read-only` is what
+      // remote hosts receive: it refuses anything but read-only tools.
+      const name = resolveToolName(rest[0] || '');
+      if (!name) { console.error('Usage: ruview call <tool> [--read-only] [--args-json \'{...}\']'); return 2; }
+      if (flags['read-only'] === true && !isRemoteReadOnlyTool(name)) {
+        pjson({ ok: false, reason: 'remote_tool_not_allowed', name }); return 1;
+      }
+      let toolArgs = {};
+      if (typeof flags['args-json'] === 'string') {
+        try { toolArgs = JSON.parse(flags['args-json']); } catch { pjson({ ok: false, reason: 'invalid_arguments', errors: ['--args-json is not valid JSON'] }); return 2; }
+      }
+      const res = await runTool(name, toolArgs, { source: 'cli' });
+      pjson(res);
+      return res.ok ? 0 : 1;
+    }
+    case 'hosts': {
+      const action = rest[0] || 'list';
+      if (action === 'list') { const res = await runTool('ruview_host_list', {}, { source: 'cli' }); pjson(res); return res.ok ? 0 : 1; }
+      if (action === 'add') {
+        try {
+          const out = saveHost({ name: flags.name, ssh: flags.ssh, port: flags.port ? Number(flags.port) : undefined, version: flags.version, description: flags.description });
+          pjson({ ok: true, ...out, next: `Verify the host key once: ssh ${out.host.ssh} true` }); return 0;
+        } catch (error) { pjson({ ok: false, reason: error.reason || 'invalid_host', detail: error.message }); return 2; }
+      }
+      if (action === 'run') {
+        let toolArgs = {};
+        if (typeof flags['args-json'] === 'string') {
+          try { toolArgs = JSON.parse(flags['args-json']); } catch { console.error('--args-json is not valid JSON'); return 2; }
+        }
+        const tool = resolveToolName(String(flags.tool || '')) || String(flags.tool || '');
+        const res = await runTool('ruview_host_run', { host: String(flags.host || ''), tool, args: toolArgs }, { source: 'cli' });
+        pjson(res); return res.ok ? 0 : 1;
+      }
+      console.error('Usage: ruview hosts list | add --name pi --ssh user@pi.local [--port 22] [--version X.Y.Z] | run --host pi --tool ruview_devices_scan [--args-json {...}]');
+      return 2;
+    }
     case '--version': case '-v': {
       const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
       console.log(pkg.version); return 0;

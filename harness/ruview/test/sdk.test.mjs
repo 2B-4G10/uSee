@@ -31,6 +31,11 @@ test('policy files list exactly the registry tools (no drift)', () => {
   const readOnly = Object.entries(TOOL_POLICY).filter(([, p]) => p.readOnly && !p.requiredGrant).map(([n]) => n).sort();
   assert.deepEqual([...claims.readOnlyTools].sort(), readOnly);
   assert.deepEqual([...mcp.readOnlyTools].sort(), readOnly);
+  const guarded = Object.entries(TOOL_POLICY).filter(([, p]) => p.readOnly && p.requiredGrant);
+  for (const [name, p] of guarded) {
+    assert.ok(claims.grants[p.requiredGrant]?.tools.includes(name), `${name} missing from claims grant ${p.requiredGrant}`);
+    assert.equal(mcp.guardedReadTools[name]?.grant, p.requiredGrant, `${name} missing from mcp-policy guardedReadTools`);
+  }
   const confirmed = Object.entries(TOOL_POLICY).filter(([, p]) => p.confirmField).map(([n]) => n).sort();
   assert.deepEqual(Object.keys(mcp.dangerousTools).sort(), confirmed);
 });

@@ -41,9 +41,10 @@ jobs:
             build: false
             publishable: true
             # ADR-283/325: brain + local hosts + replay assets + guarded Spaces OAuth adapter;
-            # still runtime-dependency-free. ADR-369..372 add the SDK, firmware
-            # flashing, training runner/gate, and doctor: 224 KiB reviewed ceiling.
-            unpacked_budget: 229376
+            # still runtime-dependency-free. ADR-369..374 add the SDK, firmware
+            # flashing, training runner/gate, doctor, device access, and SSH
+            # hosts: 320 KiB reviewed ceiling.
+            unpacked_budget: 327680
           - dir: harness/homecore
             build: false
             publishable: true
@@ -140,7 +141,7 @@ jobs:
               fi
               node --input-type=module -e "const m = await import('@ruvnet/ruview'); if (!m.TOOLS) process.exit(1);"
               # ADR-369: the typed SDK resolves and the evidence gate refuses a baseline-free score
-              node --input-type=module -e "const { createRuView } = await import('@ruvnet/ruview/sdk'); const r = createRuView(); if (r.tools().length < 16) process.exit(1); const g = await r.training.gate({ model_score: 0.93 }); if (g.verdict !== 'FAIL') process.exit(1);"
+              node --input-type=module -e "const { createRuView } = await import('@ruvnet/ruview/sdk'); const r = createRuView(); if (r.tools().length < 22) process.exit(1); const g = await r.training.gate({ model_score: 0.93 }); if (g.verdict !== 'FAIL') process.exit(1);"
               ./node_modules/.bin/ruview doctor --json --group runtime,harness,firmware > doctor.json
               if ./node_modules/.bin/ruview train-gate --model-score 0.93 > /dev/null; then
                 echo 'train-gate passed without a baseline'; exit 1

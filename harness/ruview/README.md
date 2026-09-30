@@ -20,6 +20,8 @@ npx @ruvnet/ruview ports                 # find the ESP32 serial port
 npx @ruvnet/ruview flash --port COM7 --bundle ./esp32-csi-node-s3-8mb   # plan only
 npx @ruvnet/ruview train-plan --mode pose-smoke
 npx @ruvnet/ruview train-gate --file eval-report.json
+npx @ruvnet/ruview devices               # ESP32 / mmWave / LiDAR on this machine
+npx @ruvnet/ruview hosts run --host lab-pi --tool ruview_devices_scan
 npx @ruvnet/ruview guidance --topic homecore --query "Wasmtime plugins"
 npx @ruvnet/ruview spaces --resource spaces
 npx @ruvnet/ruview spaces --resource events --limit 25
@@ -49,6 +51,8 @@ Exposed both as CLI verbs and as an MCP server (`npx @ruvnet/ruview mcp start`):
 | `ruview_train` | Run pose-smoke / pose / room training from the checkout (writes checkpoints, guarded) |
 | `ruview_train_plan` | Resolve a training command without running it (read-only) |
 | `ruview_train_gate` | Mean-pose-baseline + leakage gate that returns the only publishable claim wording |
+| `ruview_devices_scan` / `ruview_esp32_capture` / `ruview_mmwave_read` / `ruview_lidar_read` | Host device access: USB discovery, ESP32 UDP stream, 60/24 GHz mmWave, RPLIDAR/iPhone LiDAR (`device-access` grant) |
+| `ruview_host_list` / `ruview_host_run` | SSH remote hosts, read-only tools only (`remote-host` grant) |
 | `ruview_guidance` | Source-cited code map, capability maturity, validation commands, and limitations |
 | `ruview_spaces_list` | OAuth-only paging for sites/buildings/floors/spaces/zones/entities/events/alerts (guarded over MCP) |
 | `ruview_memory_search` | Search the reviewed, source-cited contributor brain |
@@ -66,6 +70,42 @@ needs `hardware-write` plus `confirm: true`; `ruview_spaces_list` needs
 cannot take `confirm`, so a read-only client can review exactly what would run.
 The MCP doctor cannot probe a board or contact a network host; those are
 CLI/SDK options (`--probe`, `--url`).
+
+## Device and host access (ADR-373, ADR-374)
+
+Run these on the machine the hardware is plugged into. A cloud agent cannot
+reach your USB ports; use a local session or an SSH host.
+
+```bash
+npx @ruvnet/ruview devices                                   # classify USB serial devices by VID:PID
+npx @ruvnet/ruview esp32 --seconds 10                         # ESP32 node UDP stream (default :5005)
+npx @ruvnet/ruview mmwave --port /dev/ttyUSB0                 # MR60BHA2 60 GHz / LD2410 24 GHz, auto-detected
+npx @ruvnet/ruview lidar --source rplidar --port /dev/ttyUSB1 # RPLIDAR scan summary
+RUVIEW_LIDAR_TOKEN=… npx @ruvnet/ruview lidar --source iphone --url ws://HOST:8787/ws/lidar
+```
+
+| Tool | Access | MCP grant |
+|---|---|---|
+| `ruview_devices_scan` | pyserial port list + VID:PID roles (opens no port) | `device-access` |
+| `ruview_esp32_capture` | receive-only UDP; CSI/vitals/feature packets per node, loss, RSSI | `device-access` |
+| `ruview_mmwave_read` | serial; firmware-identical MR60BHA2/LD2410 parsers | `device-access` |
+| `ruview_lidar_read` | RPLIDAR SCAN over serial, or iPhone relay WebSocket (stats only) | `device-access` |
+| `ruview_host_list` | configured SSH hosts | none |
+| `ruview_host_run` | one read-only tool on an SSH host | `remote-host` + the tool's grant |
+
+Remote hosts live in `~/.config/ruview/hosts.json` (mode 0600) and are added
+only from the CLI:
+
+```bash
+npx @ruvnet/ruview hosts add --name lab-pi --ssh ruv@lab-pi.local
+ssh ruv@lab-pi.local true      # pin the host key once; BatchMode + StrictHostKeyChecking are enforced
+npx @ruvnet/ruview hosts run --host lab-pi --tool ruview_esp32_capture --args-json '{"seconds":10}'
+```
+
+The remote side runs `npx -y @ruvnet/ruview@<this version> call <tool>
+--read-only`. Every argument is validated against the tool schema on both
+ends and single-quoted for the remote shell. Flash, train, calibrate,
+credentialed reads, and host hopping are never forwarded.
 
 ## Firmware flashing (ADR-370)
 
@@ -129,6 +169,9 @@ const flashed = await ruview.firmware.flash({ port: 'COM7', bundle: './bundle', 
 const gate = await ruview.training.gate({ model_score: 0.595, baseline_score: 0.501, split: 'chronological',
   train_end: '2026-03-01', test_start: '2026-03-02', n_test: 800, reproducer: 'python eval.py' });
 const kernel = await ruview.kernel.load();      // optional @ruvnet/ruview-kernel
+const radar = await ruview.devices.mmwave({ port: '/dev/ttyUSB0', model: 'auto' });
+const nodes = await ruview.devices.esp32({ seconds: 10 });
+const remote = await ruview.hosts.run('lab-pi', 'ruview_lidar_read', { source: 'rplidar', port: '/dev/ttyUSB1' });
 ```
 
 The SDK calls the same policy-checked registry as the CLI and MCP server.

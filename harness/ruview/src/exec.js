@@ -14,15 +14,18 @@ export const TOOLCHAIN_ENV = Object.freeze([
 const TAIL = 16_384;
 
 /** Run a command; resolves {ok, code, stdout, stderr, error} and never rejects. */
-export async function execTool(command, args, { cwd, timeoutMs = 120_000, maxOutputBytes = 4_194_304 } = {}) {
+export async function execTool(command, args, { cwd, timeoutMs = 120_000, maxOutputBytes = 4_194_304, fullOutput = false } = {}) {
+  // fullOutput: return all of stdout (bounded by maxOutputBytes) for binary
+  // captures; otherwise keep only a diagnostic tail.
+  const tail = (text) => (fullOutput ? text : text.slice(-TAIL));
   try {
     const r = await runProcess(command, args, { cwd, timeoutMs, maxOutputBytes, envAllowlist: TOOLCHAIN_ENV });
-    return { ok: true, code: r.code, stdout: r.stdout.slice(-TAIL), stderr: r.stderr.slice(-TAIL), error: null };
+    return { ok: true, code: r.code, stdout: tail(r.stdout), stderr: r.stderr.slice(-TAIL), error: null };
   } catch (error) {
     return {
       ok: false,
       code: error.code ?? null,
-      stdout: String(error.stdout || '').slice(-TAIL),
+      stdout: tail(String(error.stdout || '')),
       stderr: String(error.stderr || '').slice(-TAIL),
       error: String(error.message || error).slice(0, 2000),
       timedOut: Boolean(error.timedOut),

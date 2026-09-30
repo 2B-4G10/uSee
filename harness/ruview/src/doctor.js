@@ -14,9 +14,11 @@ import { fileURLToPath } from 'node:url';
 import { claimCheck } from './guardrails.js';
 import { loadBrain } from './brain.js';
 import { FIRMWARE_VARIANTS, listSerialPorts, parseChip, resolveBundle, validatePort } from './firmware.js';
+import { classifyPort } from './devices/registry.js';
+import { loadHosts } from './remote.js';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-export const DOCTOR_GROUPS = Object.freeze(['runtime', 'harness', 'hosts', 'repo', 'rust', 'python', 'firmware', 'serial', 'sensing', 'kernel']);
+export const DOCTOR_GROUPS = Object.freeze(['runtime', 'harness', 'hosts', 'repo', 'rust', 'python', 'firmware', 'serial', 'devices', 'remote', 'sensing', 'kernel']);
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 
 /** Verify the packaged provenance manifest (same rules as scripts/verify-manifest.mjs). */
@@ -157,6 +159,27 @@ export async function runDoctor(args = {}, deps) {
         add('serial', 'port', 'fail', error.message);
       }
     }
+  }
+
+  if (want('devices') && python) {
+    const listed = await listSerialPorts(deps);
+    if (listed.ok) {
+      const devices = listed.ports.map(classifyPort).filter((d) => d.likelyRoles.length);
+      if (!devices.length) add('devices', 'usb-serial', 'warn', 'no ESP32 / mmWave / RPLIDAR candidates on USB', 'Use a data-capable cable; install CP210x or CH34x drivers; on Linux add your user to dialout.');
+      for (const d of devices) add('devices', `usb:${d.port}`, 'pass', `${d.bridge || d.usb}: likely ${d.likelyRoles.join('/')} — confirm: ${d.confirmWith[0]}`);
+    } else add('devices', 'usb-serial', 'warn', `cannot enumerate (${listed.reason})`, listed.reason === 'pyserial_missing' ? 'pip install pyserial' : null);
+    add('devices', 'network-streams', 'skip', 'ESP32 UDP and iPhone LiDAR are network streams: `ruview esp32 --seconds 10`, `ruview lidar --source iphone --url ws://HOST:8787/ws/lidar`');
+  }
+
+  if (want('remote')) {
+    try {
+      const { path, hosts } = loadHosts();
+      add('remote', 'hosts-file', 'pass', hosts.length ? `${hosts.length} host(s) in ${path}: ${hosts.map((h) => h.name).join(', ')}` : `no remote hosts configured (${path})`);
+    } catch (error) {
+      add('remote', 'hosts-file', 'fail', `invalid hosts file: ${error.message}`, 'Fix or remove ~/.config/ruview/hosts.json; re-add hosts with `ruview hosts add`.');
+    }
+    const ssh = deps.which('ssh');
+    add('remote', 'ssh', ssh ? 'pass' : 'warn', ssh ? `found ${ssh}` : 'ssh client not on PATH (remote hosts)', ssh ? null : 'Install the OpenSSH client.');
   }
 
   if (want('sensing')) {
