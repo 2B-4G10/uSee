@@ -22,6 +22,10 @@ import { searchBrain } from './brain.js';
 import { getGuidance, GUIDANCE_TOPICS } from './guidance.js';
 import { listCognitumSpaces } from './spaces.js';
 import { KERNEL_BACKENDS, kernelSelfTest } from './kernel.js';
+import { execTool } from './exec.js';
+import { BAUD_RATES, FIRMWARE_VARIANTS, flashFirmware, listSerialPorts } from './firmware.js';
+import { SPLITS, TRAIN_MODES, runTraining, trainingGate } from './training.js';
+import { DOCTOR_GROUPS, runDoctor } from './doctor.js';
 
 /** Walk up from `start` to find the RuView monorepo root (or null). */
 export function findRepoRoot(start = process.cwd()) {
@@ -63,6 +67,21 @@ export function which(cmd) {
   if (found !== null) whichCache.set(cmd, found);
   return found;
 }
+
+/** Python interpreter: `python` on Windows (python3 is often a Store stub), else python3 first. */
+export function findPython() {
+  return process.platform === 'win32' ? (which('python') || which('py')) : (which('python3') || which('python'));
+}
+
+/** Injectable operator dependencies (tests replace exec/python/importer/fetch). */
+export const OPERATOR_DEPS = Object.freeze({
+  exec: execTool,
+  which,
+  findRepoRoot,
+  python: findPython,
+  importer: (specifier) => import(specifier),
+  fetch: (...a) => globalThis.fetch(...a),
+});
 
 // Bounded output tails (ADR-263 O4): spawnSync's default 1 MiB maxBuffer killed
 // chatty children with ENOBUFS; handlers only ever surface the last few kB, so
@@ -196,7 +215,7 @@ export const TOOLS = {
       if (!repo) return { ok: false, reason: 'not_in_ruview_repo', hint: 'Run inside the RuView monorepo or pass {repo}.' };
       const proof = join(repo, 'archive', 'v1', 'data', 'proof', 'verify.py');
       if (!existsSync(proof)) return { ok: false, reason: 'proof_missing', path: proof };
-      const py = which('python') || which('python3');
+      const py = findPython();
       if (!py) return { ok: false, reason: 'python_missing', hint: 'Install python to run the deterministic proof.' };
       const r = await run(py, [proof], { cwd: repo, timeout: 180000 });
       const verdict = /VERDICT:\s*PASS/i.test(r.stdout) ? 'PASS' : (/VERDICT:\s*FAIL/i.test(r.stdout) ? 'FAIL' : 'UNKNOWN');
@@ -217,7 +236,7 @@ export const TOOLS = {
     async handler(args = {}) {
       const port = args.port;
       if (!port || typeof port !== 'string') return { ok: false, reason: 'no_port', hint: 'Pass {port} (e.g. COM8).' };
-      const py = which('python') || which('python3');
+      const py = findPython();
       if (!py) return { ok: false, reason: 'python_missing' };
       const dur = Number(args.seconds) > 0 ? Number(args.seconds) : 12;
       const r = await run(py, ['-c', MONITOR_SCRIPT, port, String(dur)], { timeout: (dur + 10) * 1000 });
@@ -255,24 +274,134 @@ export const TOOLS = {
   },
 
   ruview_node_flash: {
-    title: 'Node flash',
-    description: 'Build+flash an ESP32 firmware variant. MUTATING + hardware. Fail-closed off-Windows or without ESP-IDF. Never claims hardware validation without a boot log.',
+    title: 'Flash ESP32 firmware',
+    description: 'Cross-platform ESP32-S3/C6 flash via `python -m esptool`: verifies every image against SHA256SUMS, probes the attached chip and refuses a mismatch, writes bootloader/partition table/OTA data/app (NVS preserved), then captures a boot log as hardware evidence. Without confirm it only returns the plan. MUTATING + hardware.',
     inputSchema: {
       type: 'object',
+      required: ['port', 'bundle'],
       properties: {
-        port: { type: 'string', description: 'Target port, e.g. COM8.' },
-        variant: { type: 'string', enum: ['s3-8mb', 's3-4mb', 'c6'], description: 'Firmware variant.' },
-        confirm: { type: 'boolean', description: 'Must be true to actually flash (guard).' },
+        port: { type: 'string', minLength: 3, maxLength: 80, description: 'Serial port: COM7, /dev/ttyUSB0, /dev/ttyACM0, /dev/cu.usbserial-*.' },
+        variant: { type: 'string', enum: Object.keys(FIRMWARE_VARIANTS), description: 'Board + flash size. Default: s3-8mb.' },
+        bundle: { type: 'string', minLength: 1, maxLength: 4096, description: 'Directory with bootloader.bin, partition-table.bin, [ota_data_initial.bin], esp32-csi-node.bin and SHA256SUMS(.txt): an extracted release bundle, release_bins/<variant>, or an ESP-IDF build/ dir.' },
+        baud: { type: 'number', enum: BAUD_RATES, description: 'Flash baud. Default: 460800.' },
+        allow_unverified: { type: 'boolean', description: 'Allow a bundle without SHA256SUMS (local builds only). Checksum mismatches are always refused.' },
+        boot_log_seconds: { type: 'number', minimum: 0, maximum: 120, description: 'Serial capture after flashing (default 15; 0 disables).' },
+        confirm: { type: 'boolean', description: 'Must be true to write flash.' },
       },
     },
     handler(args = {}) {
-      if (process.platform !== 'win32') {
-        return { ok: false, reason: 'unsupported_platform', detail: 'The ESP-IDF flash flow is Windows-subprocess-specific today (see CLAUDE.local.md).' };
-      }
-      if (!args.confirm) {
-        return { ok: false, reason: 'not_confirmed', detail: 'Mutating hardware op — re-call with {confirm:true}.', would_flash: { port: args.port, variant: args.variant || 's3-8mb' } };
-      }
-      return { ok: false, reason: 'manual_step_required', detail: 'Flashing uses the pinned ESP-IDF subprocess in CLAUDE.local.md. This tool returns the exact command rather than running an unattended flash.', see: 'skills/provision-node.md' };
+      return flashFirmware(args, OPERATOR_DEPS);
+    },
+  },
+
+  ruview_firmware_plan: {
+    title: 'Plan a firmware flash',
+    description: 'Read-only: verify a firmware bundle against SHA256SUMS and return the exact esptool command, offsets, digests, and warnings. Never touches the serial port.',
+    inputSchema: {
+      type: 'object',
+      required: ['port', 'bundle'],
+      properties: {
+        port: { type: 'string', minLength: 3, maxLength: 80, description: 'Serial port: COM7, /dev/ttyUSB0, /dev/ttyACM0, /dev/cu.usbserial-*.' },
+        variant: { type: 'string', enum: Object.keys(FIRMWARE_VARIANTS), description: 'Board + flash size. Default: s3-8mb.' },
+        bundle: { type: 'string', minLength: 1, maxLength: 4096, description: 'Directory with bootloader.bin, partition-table.bin, [ota_data_initial.bin], esp32-csi-node.bin and SHA256SUMS(.txt): an extracted release bundle, release_bins/<variant>, or an ESP-IDF build/ dir.' },
+        baud: { type: 'number', enum: BAUD_RATES, description: 'Flash baud. Default: 460800.' },
+        allow_unverified: { type: 'boolean', description: 'Allow a bundle without SHA256SUMS (local builds only). Checksum mismatches are always refused.' },
+      },
+    },
+    handler(args = {}) {
+      return flashFirmware({ ...args, confirm: false }, OPERATOR_DEPS);
+    },
+  },
+
+  ruview_firmware_ports: {
+    title: 'List serial ports',
+    description: 'Enumerate serial ports through pyserial so an operator can pick the ESP32 port. Read-only; opens no port.',
+    inputSchema: { type: 'object', properties: {} },
+    handler() {
+      return listSerialPorts(OPERATOR_DEPS);
+    },
+  },
+
+  ruview_doctor: {
+    title: 'Debugging doctor',
+    description: 'Structured, read-only diagnostics with remedies: Node, package integrity, guardrails, agent hosts, checkout/submodules, Rust/wasm32, Python/pyserial/esptool, firmware bundle checksums, serial ports, and the optional compute kernel.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        groups: { type: 'array', maxItems: DOCTOR_GROUPS.length, items: { type: 'string', enum: DOCTOR_GROUPS }, description: 'Subset of check groups. Default: all.' },
+        port: { type: 'string', minLength: 3, maxLength: 80, description: 'Check that this serial port is present (does not open it).' },
+      },
+    },
+    handler(args = {}) {
+      return runDoctor({ groups: args.groups, port: args.port }, OPERATOR_DEPS);
+    },
+  },
+
+  ruview_train: {
+    title: 'Train a model',
+    description: 'Run a RuView trainer from the trusted checkout: pose-smoke (wifi-densepose-train --dry-run on a synthetic dataset), pose (MM-Fi data_dir), or room (ADR-151 train-room from an enrollment). Paths must stay inside the checkout. Without confirm it only returns the plan. Writes checkpoints.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', enum: TRAIN_MODES, description: 'Default: pose-smoke.' },
+        config: { type: 'string', minLength: 1, maxLength: 4096, description: 'Training config JSON (inside the checkout).' },
+        data_dir: { type: 'string', minLength: 1, maxLength: 4096, description: 'pose: MM-Fi recordings directory (inside the checkout).' },
+        checkpoint_dir: { type: 'string', minLength: 1, maxLength: 4096, description: 'Checkpoint output (inside the checkout). Default: v2/target/ruview-train/<mode>.' },
+        enrollment: { type: 'string', minLength: 1, maxLength: 4096, description: 'room: enrollment JSON from `wifi-densepose enroll`.' },
+        output: { type: 'string', minLength: 1, maxLength: 4096, description: 'room: specialist bank output path.' },
+        samples: { type: 'number', minimum: 8, maximum: 100000, description: 'pose-smoke: synthetic sample count. Default 64.' },
+        cuda: { type: 'boolean', description: 'pose modes: build with CUDA.' },
+        confirm: { type: 'boolean', description: 'Must be true to execute training.' },
+      },
+    },
+    handler(args = {}) {
+      return runTraining(args, OPERATOR_DEPS);
+    },
+  },
+
+  ruview_train_plan: {
+    title: 'Plan a training run',
+    description: 'Read-only: resolve and validate a training request and return the exact command, working directory, and output paths without executing anything.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', enum: TRAIN_MODES },
+        config: { type: 'string', minLength: 1, maxLength: 4096 },
+        data_dir: { type: 'string', minLength: 1, maxLength: 4096 },
+        checkpoint_dir: { type: 'string', minLength: 1, maxLength: 4096 },
+        enrollment: { type: 'string', minLength: 1, maxLength: 4096 },
+        output: { type: 'string', minLength: 1, maxLength: 4096 },
+        samples: { type: 'number', minimum: 8, maximum: 100000 },
+        cuda: { type: 'boolean' },
+      },
+    },
+    handler(args = {}) {
+      return runTraining({ ...args, confirm: false }, OPERATOR_DEPS);
+    },
+  },
+
+  ruview_train_gate: {
+    title: 'Training evidence gate',
+    description: 'Decide whether a pose/count result may be published: requires the mean-pose baseline on the same split, a leakage-free split (chronological, blocked-gap, or grouped), disjoint subjects for grouped-subject splits, and a reproducer for MEASURED. Returns the only acceptable claim wording.',
+    inputSchema: {
+      type: 'object',
+      required: ['model_score'],
+      properties: {
+        metric: { type: 'string', maxLength: 40, description: 'e.g. PCK@20.' },
+        model_score: { type: 'number', minimum: 0, maximum: 100, description: 'Held-out score (0-1 or 0-100).' },
+        baseline_score: { type: 'number', minimum: 0, maximum: 100, description: 'Mean-pose baseline on the same split.' },
+        split: { type: 'string', enum: SPLITS },
+        train_subjects: { type: 'array', maxItems: 10000, items: { type: 'string', maxLength: 128 } },
+        test_subjects: { type: 'array', maxItems: 10000, items: { type: 'string', maxLength: 128 } },
+        train_end: { type: 'string', maxLength: 64, description: 'ISO time of the last training sample.' },
+        test_start: { type: 'string', maxLength: 64, description: 'ISO time of the first test sample.' },
+        n_test: { type: 'number', minimum: 0, maximum: 1e9 },
+        reproducer: { type: 'string', maxLength: 1000, description: 'Command that regenerates the number.' },
+        data: { type: 'string', enum: ['real', 'synthetic'] },
+      },
+    },
+    handler(args = {}) {
+      return trainingGate(args);
     },
   },
 

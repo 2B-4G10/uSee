@@ -15,7 +15,11 @@ against a baseline — that rule is enforced in code (`ruview_claim_check`).
 npx @ruvnet/ruview                       # onboard — pick a setup path
 npx @ruvnet/ruview claim-check --file REPORT.md   # the honesty guardrail (non-zero exit on untagged claims)
 npx @ruvnet/ruview verify                # run the deterministic proof (VERDICT: PASS)
-npx @ruvnet/ruview doctor                # self-check (tools, adapters, local CLIs)
+npx @ruvnet/ruview doctor                # structured diagnostics with fixes (ADR-372)
+npx @ruvnet/ruview ports                 # find the ESP32 serial port
+npx @ruvnet/ruview flash --port COM7 --bundle ./esp32-csi-node-s3-8mb   # plan only
+npx @ruvnet/ruview train-plan --mode pose-smoke
+npx @ruvnet/ruview train-gate --file eval-report.json
 npx @ruvnet/ruview guidance --topic homecore --query "Wasmtime plugins"
 npx @ruvnet/ruview spaces --resource spaces
 npx @ruvnet/ruview spaces --resource events --limit 25
@@ -38,7 +42,13 @@ Exposed both as CLI verbs and as an MCP server (`npx @ruvnet/ruview mcp start`):
 | `ruview_verify` | Run `verify.py` deterministic proof → VERDICT |
 | `ruview_node_monitor` | Assert CSI is flowing on an ESP32 (read-only) |
 | `ruview_calibrate` | ADR-151 room pipeline (baseline→enroll→train-room→room-watch) |
-| `ruview_node_flash` | Build+flash firmware (Windows/ESP-IDF; mutating, guarded) |
+| `ruview_node_flash` | Cross-platform esptool flash with checksum + chip preflight and boot-log evidence (mutating, guarded) |
+| `ruview_firmware_plan` | Verify a firmware bundle and return the exact esptool command (read-only) |
+| `ruview_firmware_ports` | Enumerate serial ports via pyserial (read-only) |
+| `ruview_doctor` | Structured diagnostics: runtime, integrity, hosts, repo, Rust, Python/esptool, bundles, serial, kernel |
+| `ruview_train` | Run pose-smoke / pose / room training from the checkout (writes checkpoints, guarded) |
+| `ruview_train_plan` | Resolve a training command without running it (read-only) |
+| `ruview_train_gate` | Mean-pose-baseline + leakage gate that returns the only publishable claim wording |
 | `ruview_guidance` | Source-cited code map, capability maturity, validation commands, and limitations |
 | `ruview_spaces_list` | OAuth-only paging for sites/buildings/floors/spaces/zones/entities/events/alerts (guarded over MCP) |
 | `ruview_memory_search` | Search the reviewed, source-cited contributor brain |
@@ -46,6 +56,83 @@ Exposed both as CLI verbs and as an MCP server (`npx @ruvnet/ruview mcp start`):
 
 Every tool is **fail-closed**: missing repo / python / binary / port → an honest
 negative, never a fabricated success.
+
+### MCP authority model
+
+Read-only tools need no grant. Over MCP, `ruview_calibrate` and `ruview_train`
+need the `workspace-write` grant plus `confirm: true`; `ruview_node_flash`
+needs `hardware-write` plus `confirm: true`; `ruview_spaces_list` needs
+`credential-use`. The plan tools (`ruview_firmware_plan`, `ruview_train_plan`)
+cannot take `confirm`, so a read-only client can review exactly what would run.
+The MCP doctor cannot probe a board or contact a network host; those are
+CLI/SDK options (`--probe`, `--url`).
+
+## Firmware flashing (ADR-370)
+
+Works on Windows, macOS, and Linux through `python -m esptool` (`pip install
+esptool pyserial`). The bundle directory is an extracted release flash bundle,
+`firmware/esp32-csi-node/release_bins/<variant>`, or an ESP-IDF `build/`.
+
+```bash
+npx @ruvnet/ruview ports
+npx @ruvnet/ruview flash-plan --port /dev/ttyUSB0 --bundle ./bundle --variant s3-8mb
+npx @ruvnet/ruview flash --port /dev/ttyUSB0 --bundle ./bundle --variant s3-8mb --confirm
+```
+
+Before writing, every image is checked against `SHA256SUMS(.txt)` (a mismatch
+is always refused), and `esptool chip_id` must report the chip the variant
+targets. After writing, a 15 s serial capture is summarized. The result sets
+`hardwareValidated: true` only when that log shows CSI callbacks without a
+panic. A successful write alone is not hardware validation. WiFi provisioning
+stays with `provision.py` (see the `provision-node` skill) so credentials never
+pass through the harness.
+
+## Training (ADR-371)
+
+```bash
+npx @ruvnet/ruview train-plan --mode pose-smoke        # review the command
+npx @ruvnet/ruview train --mode pose-smoke --confirm   # SYNTHETIC smoke run (needs libtorch)
+npx @ruvnet/ruview train --mode pose --data-dir data/mmfi --confirm
+npx @ruvnet/ruview train --mode room --enrollment enrollment.json --confirm
+npx @ruvnet/ruview train-gate --file eval-report.json  # PASS/FAIL + publishable wording
+```
+
+Pose training builds `wifi-densepose-train` with `tch-backend`. It needs
+libtorch: tch 0.24 expects torch 2.11.0, via `LIBTORCH` or
+`LIBTORCH_USE_PYTORCH=1`. Checkpoints and trainer logs go under
+`v2/target/ruview-train/<mode>` unless `--checkpoint-dir` names another path
+inside the checkout. The gate refuses any score that has no mean-pose baseline,
+uses a random-frame split, shares subjects across a grouped-subject split,
+overlaps in time, or fails to beat the baseline.
+
+## Debugging doctor (ADR-372)
+
+```bash
+npx @ruvnet/ruview doctor                          # all groups, human output
+npx @ruvnet/ruview doctor --json --group python,serial,firmware
+npx @ruvnet/ruview doctor --port COM7 --probe      # esptool chip_id (resets the board, writes nothing)
+npx @ruvnet/ruview doctor --url http://localhost:3000   # sensing-server /health
+```
+
+Each check is `pass`, `warn`, `fail`, or `skip`, and every non-passing check
+carries a `fix:`. The exit code is non-zero only for failures.
+
+## SDK (ADR-369)
+
+```js
+import { createRuView } from '@ruvnet/ruview/sdk';   // typed: src/sdk.d.ts
+
+const ruview = createRuView();                  // { strict: true } throws RuViewError on ok:false
+const report = await ruview.doctor({ groups: ['python', 'serial'] });
+const plan = await ruview.firmware.plan({ port: 'COM7', bundle: './bundle', variant: 'c6' });
+const flashed = await ruview.firmware.flash({ port: 'COM7', bundle: './bundle', variant: 'c6', confirm: true });
+const gate = await ruview.training.gate({ model_score: 0.595, baseline_score: 0.501, split: 'chronological',
+  train_end: '2026-03-01', test_start: '2026-03-02', n_test: 800, reproducer: 'python eval.py' });
+const kernel = await ruview.kernel.load();      // optional @ruvnet/ruview-kernel
+```
+
+The SDK calls the same policy-checked registry as the CLI and MCP server.
+Mutating calls still need `confirm: true`.
 
 ### Cognitum Spaces OAuth
 

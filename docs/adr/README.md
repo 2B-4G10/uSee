@@ -2,6 +2,11 @@
 
 Latest proposed decisions:
 
+- [ADR-372: Structured debugging doctor](ADR-372-structured-debugging-doctor.md)
+- [ADR-371: Harness training runner and mean-pose evidence gate](ADR-371-harness-training-runner-and-evidence-gate.md)
+- [ADR-370: Cross-platform, verified ESP32 firmware flashing from npm](ADR-370-cross-platform-firmware-flashing.md)
+- [ADR-369: npm RuView operator surface — CLI, MCP, and SDK](ADR-369-ruview-npm-operator-surface-and-sdk.md)
+- [ADR-368: RuView compute kernel as a WASM + napi-rs npm package](ADR-368-ruview-kernel-wasm-napi-npm.md)
 - [ADR-367: Bounded research swarm and compute ownership](ADR-367-bounded-research-swarm-and-compute-ownership.md)
 - [ADR-366: CSI controls and frozen evaluation](ADR-366-csi-controls-and-frozen-evaluation.md)
 - [ADR-365: Public BFI dataset and decoder contract](ADR-365-public-bfi-dataset-and-decoder-contract.md)

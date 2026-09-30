@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { realpathSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { argv } from 'node:process';
-import { TOOLS, runTool, listTools, findRepoRoot, which } from '../src/tools.js';
-import { claimCheck, summarize } from '../src/guardrails.js';
+import { runTool, listTools, findRepoRoot, OPERATOR_DEPS } from '../src/tools.js';
+import { formatDoctor, runDoctor, DOCTOR_GROUPS } from '../src/doctor.js';
 import { getHost } from '../src/hosts/index.js';
 import { makeProposal, searchBrain, verifyBrain } from '../src/brain.js';
 
@@ -30,7 +30,29 @@ const VERB_TO_TOOL = {
   guidance: 'ruview_guidance',
   spaces: 'ruview_spaces_list',
   kernel: 'ruview_kernel_selftest',
+  'flash-plan': 'ruview_firmware_plan',
+  ports: 'ruview_firmware_ports',
+  train: 'ruview_train',
+  'train-plan': 'ruview_train_plan',
+  'train-gate': 'ruview_train_gate',
 };
+
+// Verbs whose kebab-case flags map 1:1 onto snake_case schema fields (ADR-369).
+const SNAKE_VERBS = new Set(['flash', 'flash-plan', 'train', 'train-plan', 'train-gate']);
+const NUMERIC_FLAGS = new Set(['baud', 'boot_log_seconds', 'samples', 'model_score', 'baseline_score', 'n_test']);
+const BOOLEAN_FLAGS = new Set(['confirm', 'cuda', 'allow_unverified']);
+
+function toSchemaArgs(flags) {
+  const out = {};
+  for (const [key, value] of Object.entries(flags)) {
+    const k = key.replaceAll('-', '_');
+    if (NUMERIC_FLAGS.has(k)) out[k] = Number(value);
+    else if (BOOLEAN_FLAGS.has(k)) out[k] = value === true || value === 'true';
+    else if (k === 'train_subjects' || k === 'test_subjects') out[k] = String(value).split(',').filter(Boolean);
+    else out[k] = value;
+  }
+  return out;
+}
 
 function pjson(o) { console.log(JSON.stringify(o, null, 2)); }
 
@@ -39,26 +61,19 @@ function listSkills() {
   return readdirSync(SKILLS_DIR).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''));
 }
 
-async function doctor() {
-  const checks = [];
-  // Tools layer (always available, no deps).
-  checks.push(['tool registry loads', Object.keys(TOOLS).length > 0]);
-  checks.push(['claim_check flags a 100% claim',
-    !claimCheck('We hit 100% accuracy on poses.').ok]);
-  checks.push(['claim_check passes a tagged MEASURED claim',
-    claimCheck('Held-out PCK@20 59.5% (MEASURED vs mean-pose baseline, verify.py).').ok]);
-  checks.push(['skills present', listSkills().length > 0]);
-  checks.push(['Claude Code adapter resolves', getHost('claude-code').name === 'claude-code']);
-  checks.push(['Codex adapter resolves', getHost('codex').name === 'codex']);
-  const localHosts = [
-    which('claude') ? 'claude -p' : null,
-    which('codex') ? 'codex exec' : null,
-  ].filter(Boolean);
-  const spacesBackend = which('wifi-densepose') ? 'wifi-densepose binary' : 'unavailable (install wifi-densepose)';
-  let ok = true;
-  for (const [label, pass] of checks) { console.log(`${pass ? 'PASS' : 'FAIL'} ${label}`); if (!pass) ok = false; }
-  console.log(`\n${NAME}: ${ok ? 'all checks passed' : 'doctor found problems'} — local hosts: ${localHosts.join(', ') || 'none on PATH (optional)'}; Spaces backend: ${spacesBackend}`);
-  return ok ? 0 : 1;
+async function doctor(flags) {
+  const groups = typeof flags.group === 'string' ? flags.group.split(',').map((g) => g.trim()).filter(Boolean) : undefined;
+  const unknown = (groups || []).filter((g) => !DOCTOR_GROUPS.includes(g));
+  if (unknown.length) { console.error(`doctor: unknown group(s) ${unknown.join(', ')}; valid: ${DOCTOR_GROUPS.join(', ')}`); return 2; }
+  const report = await runDoctor({
+    groups,
+    port: typeof flags.port === 'string' ? flags.port : undefined,
+    probe_port: flags.probe === true,
+    sensing_url: typeof flags.url === 'string' ? flags.url : undefined,
+  }, OPERATOR_DEPS);
+  if (flags.json === true) pjson(report);
+  else console.log(formatDoctor(report));
+  return report.ok ? 0 : 1;
 }
 
 function help() {
@@ -75,8 +90,21 @@ Operator tools:
   spaces [--resource sites|...|alerts] [--limit 50]     page OAuth-bound Cognitum spatial resources
   kernel [--backend wasm|napi|auto] [--seconds 60]      SYNTHETIC self-test of @ruvnet/ruview-kernel (optional)
 
+Firmware (ADR-370, cross-platform esptool):
+  ports                                                  list serial ports (pyserial)
+  flash-plan --port <p> --bundle <dir> [--variant s3-8mb|s3-4mb|c6]   verify + print the plan
+  flash --port <p> --bundle <dir> [--variant ...] [--baud 460800] --confirm
+        [--boot-log-seconds 15] [--allow-unverified]     write flash, then capture boot evidence
+
+Training (ADR-371):
+  train-plan [--mode pose-smoke|pose|room] [...]         resolve the command, run nothing
+  train --mode pose-smoke|pose|room [--config f] [--data-dir d] [--checkpoint-dir d]
+        [--enrollment f] [--output f] [--samples 64] [--cuda] --confirm
+  train-gate --file report.json | --model-score .59 --baseline-score .50 --split chronological ...
+
 Harness:
-  doctor                 verify tools, adapters, and local CLI discovery
+  doctor [--json] [--group a,b] [--port P [--probe]] [--url http://host:port]
+                         structured diagnostics with fixes (ADR-372)
   skills                 list bundled skills
   skill <name>           print a skill playbook
   mcp start              run the ruview.* MCP server (stdio)
@@ -130,6 +158,15 @@ export async function run(args) {
     if (cmd === 'guidance' && flags.limit) toolArgs.limit = Number(flags.limit);
     if (cmd === 'calibrate' && typeof flags.args === 'string') toolArgs.args = flags.args.split(',');
     if (cmd === 'kernel' && flags.seconds !== undefined) toolArgs.seconds = Number(flags.seconds);
+    if (SNAKE_VERBS.has(cmd)) {
+      let snake = toSchemaArgs(flags);
+      if (cmd === 'train-gate' && typeof flags.file === 'string') {
+        snake = JSON.parse(readFileSync(flags.file, 'utf8'));
+      }
+      const res = await runTool(VERB_TO_TOOL[cmd], snake, { source: 'cli' });
+      pjson(res);
+      return res.ok ? 0 : 1;
+    }
     if (cmd === 'spaces') {
       if (flags['credentials-path'] !== undefined) toolArgs.credentials_path = flags['credentials-path'];
       delete toolArgs['credentials-path'];
@@ -141,7 +178,7 @@ export async function run(args) {
   }
 
   switch (cmd) {
-    case 'doctor': return doctor();
+    case 'doctor': return doctor(flags);
     case 'skills': console.log(listSkills().join('\n') || '(none)'); return 0;
     case 'skill': {
       const n = rest[0];

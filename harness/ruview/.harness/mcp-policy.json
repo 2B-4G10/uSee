@@ -13,7 +13,12 @@
     "ruview_node_monitor",
     "ruview_guidance",
     "ruview_memory_search",
-    "ruview_kernel_selftest"
+    "ruview_kernel_selftest",
+    "ruview_doctor",
+    "ruview_firmware_plan",
+    "ruview_firmware_ports",
+    "ruview_train_plan",
+    "ruview_train_gate"
   ],
   "guardedReadTools": {
     "ruview_spaces_list": {
@@ -29,6 +34,10 @@
     },
     "ruview_node_flash": {
       "grant": "hardware-write",
+      "confirm": true
+    },
+    "ruview_train": {
+      "grant": "workspace-write",
       "confirm": true
     }
   }

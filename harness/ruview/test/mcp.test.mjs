@@ -51,7 +51,7 @@ test('MCP handshake: initialize reports the package.json version; list endpoints
 
     s.send({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
     const tools = (await s.next(2)).result.tools;
-    assert.equal(tools.length, 10);
+    assert.equal(tools.length, 16);
     for (const t of tools) assert.match(t.name, /^[a-zA-Z0-9_-]{1,64}$/, `advertised name not host-safe: ${t.name}`);
     const guidance = tools.find((tool) => tool.name === 'ruview_guidance');
     assert.ok(guidance);

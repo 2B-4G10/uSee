@@ -12,6 +12,12 @@ export const TOOL_POLICY = Object.freeze({
   ruview_spaces_list: { class: 'external-read', readOnly: true, requiredGrant: 'credential-use', openWorld: true, usesCredentials: true, mayRefreshCredentials: true },
   ruview_memory_search: { class: 'read', readOnly: true },
   ruview_kernel_selftest: { class: 'read', readOnly: true },
+  ruview_doctor: { class: 'read', readOnly: true },
+  ruview_firmware_plan: { class: 'read', readOnly: true },
+  ruview_firmware_ports: { class: 'hardware-read', readOnly: true, hardware: true },
+  ruview_train_plan: { class: 'read', readOnly: true },
+  ruview_train_gate: { class: 'read', readOnly: true },
+  ruview_train: { class: 'workspace-write', writesWorkspace: true, confirmField: 'confirm' },
 });
 
 function typeMatches(value, type) {
