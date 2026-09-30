@@ -42,6 +42,7 @@ Exposed both as CLI verbs and as an MCP server (`npx @ruvnet/ruview mcp start`):
 | `ruview_guidance` | Source-cited code map, capability maturity, validation commands, and limitations |
 | `ruview_spaces_list` | OAuth-only paging for sites/buildings/floors/spaces/zones/entities/events/alerts (guarded over MCP) |
 | `ruview_memory_search` | Search the reviewed, source-cited contributor brain |
+| `ruview_kernel_selftest` | SYNTHETIC self-test of the optional `@ruvnet/ruview-kernel` WASM/napi-rs compute package (ADR-368) |
 
 Every tool is **fail-closed**: missing repo / python / binary / port → an honest
 negative, never a fabricated success.

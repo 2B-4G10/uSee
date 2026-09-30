@@ -11,6 +11,7 @@ export const TOOL_POLICY = Object.freeze({
   ruview_guidance: { class: 'read', readOnly: true },
   ruview_spaces_list: { class: 'external-read', readOnly: true, requiredGrant: 'credential-use', openWorld: true, usesCredentials: true, mayRefreshCredentials: true },
   ruview_memory_search: { class: 'read', readOnly: true },
+  ruview_kernel_selftest: { class: 'read', readOnly: true },
 });
 
 function typeMatches(value, type) {

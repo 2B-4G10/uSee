@@ -21,6 +21,7 @@ import { authorizeTool, mcpAnnotations, validateArguments } from './policy.js';
 import { searchBrain } from './brain.js';
 import { getGuidance, GUIDANCE_TOPICS } from './guidance.js';
 import { listCognitumSpaces } from './spaces.js';
+import { KERNEL_BACKENDS, kernelSelfTest } from './kernel.js';
 
 /** Walk up from `start` to find the RuView monorepo root (or null). */
 export function findRepoRoot(start = process.cwd()) {
@@ -308,6 +309,21 @@ export const TOOLS = {
         source: context.source,
         binary: which('wifi-densepose'),
       });
+    },
+  },
+
+  ruview_kernel_selftest: {
+    title: 'Run RuView compute kernel self-test',
+    description: 'Load the optional @ruvnet/ruview-kernel package (zero-import WASM by default; napi-rs native only when requested) and run its deterministic SYNTHETIC end-to-end vitals pipeline self-test. Reports the backend that actually ran, any fallback, and artifact integrity. Fails closed when the package is absent.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        backend: { type: 'string', enum: KERNEL_BACKENDS, description: 'wasm (default, no host authority), napi (native addon), or auto (napi, else wasm with a reported fallback).' },
+        seconds: { type: 'number', minimum: 30, maximum: 300, description: 'Synthetic capture length. Default: 60.' },
+      },
+    },
+    handler(args = {}) {
+      return kernelSelfTest(args);
     },
   },
 

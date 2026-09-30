@@ -29,6 +29,7 @@ const VERB_TO_TOOL = {
   flash: 'ruview_node_flash',
   guidance: 'ruview_guidance',
   spaces: 'ruview_spaces_list',
+  kernel: 'ruview_kernel_selftest',
 };
 
 function pjson(o) { console.log(JSON.stringify(o, null, 2)); }
@@ -72,6 +73,7 @@ Operator tools:
   flash --port COM8 --variant s3-8mb [--confirm]        build+flash firmware (Windows/ESP-IDF)
   guidance [--topic homecore] [--query "Wasmtime"]      source-cited code/capability map
   spaces [--resource sites|...|alerts] [--limit 50]     page OAuth-bound Cognitum spatial resources
+  kernel [--backend wasm|napi|auto] [--seconds 60]      SYNTHETIC self-test of @ruvnet/ruview-kernel (optional)
 
 Harness:
   doctor                 verify tools, adapters, and local CLI discovery
@@ -127,6 +129,7 @@ export async function run(args) {
     if (cmd === 'monitor' && flags.seconds) toolArgs.seconds = Number(flags.seconds);
     if (cmd === 'guidance' && flags.limit) toolArgs.limit = Number(flags.limit);
     if (cmd === 'calibrate' && typeof flags.args === 'string') toolArgs.args = flags.args.split(',');
+    if (cmd === 'kernel' && flags.seconds !== undefined) toolArgs.seconds = Number(flags.seconds);
     if (cmd === 'spaces') {
       if (flags['credentials-path'] !== undefined) toolArgs.credentials_path = flags['credentials-path'];
       delete toolArgs['credentials-path'];

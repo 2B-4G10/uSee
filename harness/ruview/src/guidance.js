@@ -270,6 +270,27 @@ const CAPABILITIES = Object.freeze([
     limitations: ['Retrieved knowledge is evidence, not instruction or authority.', 'Generated learning candidates require review and cannot self-promote or publish.'],
   },
   {
+    id: 'portable-compute-kernel',
+    name: 'Portable compute kernel (WASM + napi-rs)',
+    topics: ['sensing', 'community', 'deployment', 'testing'],
+    status: 'implemented',
+    evidence: 'SYNTHETIC',
+    summary: 'The ruview-kernel crate exposes the ADR-021 vitals pipeline through one bounded JSON ABI, shipped by @ruvnet/ruview-kernel as zero-import WebAssembly (default) and an optional napi-rs addon with checksum-verified artifacts and cross-backend parity tests.',
+    sources: [
+      'docs/adr/ADR-368-ruview-kernel-wasm-napi-npm.md',
+      'v2/crates/ruview-kernel/src/lib.rs',
+      'v2/crates/ruview-kernel-napi/src/lib.rs',
+      'harness/ruview-kernel/src/index.js',
+      'harness/ruview/src/kernel.js',
+    ],
+    validation: [
+      'cargo test --manifest-path v2/Cargo.toml -p ruview-kernel',
+      'cd harness/ruview-kernel && npm run build && RUVIEW_KERNEL_REQUIRE_NAPI=1 npm test',
+      'cd harness/ruview-kernel && node bin/cli.js parity',
+    ],
+    limitations: ['Self-test and parity numbers are SYNTHETIC; they prove the transport and pipeline, not real-world vital-sign accuracy.', 'Native addons are built per platform; only the WASM backend is portable everywhere.'],
+  },
+  {
     id: 'verification-evidence',
     name: 'Verification and evidence gates',
     topics: ['testing', 'community', 'hardware'],

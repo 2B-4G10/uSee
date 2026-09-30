@@ -19,7 +19,8 @@ accuracy number:
 
 `ruview_onboard`, `ruview_claim_check`, `ruview_verify`, `ruview_node_monitor`,
 `ruview_calibrate`, `ruview_node_flash`, `ruview_guidance`,
-`ruview_spaces_list`, `ruview_memory_search`. Start unfamiliar work with
+`ruview_spaces_list`, `ruview_memory_search`, `ruview_kernel_selftest`. Start
+unfamiliar work with
 `ruview_guidance`; its
 capability status, source paths, validation commands, and limitations are
 navigation evidence, not authority. All tools fail closed. Mutating/hardware

@@ -8,7 +8,8 @@
       "ruview_verify",
       "ruview_node_monitor",
       "ruview_guidance",
-      "ruview_memory_search"
+      "ruview_memory_search",
+      "ruview_kernel_selftest"
     ],
     "grants": {
       "credential-use": {
