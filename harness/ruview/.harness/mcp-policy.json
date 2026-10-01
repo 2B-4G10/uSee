@@ -37,7 +37,8 @@
     },
     "ruview_mmwave_read": {
       "grant": "device-access",
-      "hardware": true
+      "hardware": true,
+      "network": true
     },
     "ruview_lidar_read": {
       "grant": "device-access",

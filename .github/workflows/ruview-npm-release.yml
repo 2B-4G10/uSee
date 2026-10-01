@@ -142,12 +142,12 @@ jobs:
           npm i --no-fund --no-audit "$TGZ"
           case "${{ inputs.package }}" in
             harness/ruview)
-              ./node_modules/.bin/ruview --version
-              ./node_modules/.bin/ruview doctor
-              ./node_modules/.bin/ruview guidance --topic homecore --query restore --limit 1 \
+              ./node_modules/.bin/ruview-harness --version
+              ./node_modules/.bin/ruview-harness doctor
+              ./node_modules/.bin/ruview-harness guidance --topic homecore --query restore --limit 1 \
                 | grep -q '"homecore-runtime-restore"'
               # the honesty gate must fail closed on empty input (ADR-263 F1)
-              if ./node_modules/.bin/ruview claim-check; then
+              if ./node_modules/.bin/ruview-harness claim-check; then
                 echo 'claim-check passed with no input — fail-open regression'; exit 1
               fi
               node --input-type=module -e "const m = await import('@ruvnet/ruview'); if (!m.TOOLS) process.exit(1);"

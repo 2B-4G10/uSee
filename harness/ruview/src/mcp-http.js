@@ -13,7 +13,7 @@
 
 import http from 'node:http';
 import { randomBytes, timingSafeEqual, createHash } from 'node:crypto';
-import { createDispatcher, MAX_REQUEST_BYTES, parseGrants, SERVER_INFO, SUPPORTED_PROTOCOLS } from './mcp-server.js';
+import { createDispatcher, handleRpc, MAX_REQUEST_BYTES, parseGrants, SERVER_INFO, SUPPORTED_PROTOCOLS } from './mcp-server.js';
 
 export const DEFAULT_HTTP_PORT = 8790;
 export const HTTP_WRITE_GRANTS = Object.freeze(['workspace-write', 'hardware-write']);
@@ -47,7 +47,7 @@ function send(res, status, body, headers = {}) {
 
 /**
  * Start the HTTP transport. opts: { host='127.0.0.1', port=8790, token,
- * allowOrigins=[], grants=env RUVIEW_MCP_GRANTS, log }. Resolves to
+ * allowOrigins=[], grants=env RUVIEW_MCP_GRANTS, log, handler=handleRpc }. Resolves to
  * { server, url, secretUrl, token, grants, close() }.
  */
 export function startMcpHttp(opts = {}) {
@@ -61,7 +61,7 @@ export function startMcpHttp(opts = {}) {
   const log = opts.log || ((...a) => process.stderr.write('[ruview-mcp-http] ' + a.join(' ') + '\n'));
   const dropped = requested.filter((g) => !grants.includes(g));
   if (dropped.length) log(`write grants are never honoured over HTTP; ignoring: ${dropped.join(', ')}`);
-  const { dispatch } = createDispatcher({ source: 'mcp', transport: 'http', grants });
+  const { dispatch } = createDispatcher({ source: 'mcp', transport: 'http', grants }, opts.handler || handleRpc);
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');

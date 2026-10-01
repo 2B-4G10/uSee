@@ -23,7 +23,7 @@ import { fileURLToPath as toPath } from 'node:url';
 import { searchBrain } from './brain.js';
 import { getGuidance, GUIDANCE_TOPICS } from './guidance.js';
 import { listCognitumSpaces } from './spaces.js';
-import { KERNEL_BACKENDS, kernelAnalyzer, kernelSelfTest } from './kernel.js';
+import { importKernelPackage, KERNEL_BACKENDS, KERNEL_PACKAGE, kernelAnalyzer, kernelSelfTest } from './kernel.js';
 import { execTool } from './exec.js';
 import { BAUD_RATES, FIRMWARE_VARIANTS, flashFirmware, listSerialPorts } from './firmware.js';
 import { SPLITS, TRAIN_MODES, runTraining, trainingGate } from './training.js';
@@ -31,6 +31,7 @@ import { DOCTOR_GROUPS, runDoctor } from './doctor.js';
 import { UI_TOOLS, uiToolMeta } from './ui/console-widget.js';
 import { scanDevices } from './devices/registry.js';
 import { captureEsp32 } from './devices/esp32.js';
+import { readEsphome } from './devices/esphome.js';
 import { MMWAVE_MODELS, readMmwave } from './devices/mmwave.js';
 import { readIphoneLidar, readRplidar } from './devices/lidar.js';
 import { loadHosts, runRemote } from './remote.js';
@@ -88,7 +89,8 @@ export const OPERATOR_DEPS = Object.freeze({
   which,
   findRepoRoot,
   python: findPython,
-  importer: (specifier) => import(specifier),
+  // The kernel goes through kernel.js so an embedding package's importer applies (ADR-376).
+  importer: (specifier) => (specifier === KERNEL_PACKAGE ? importKernelPackage() : import(specifier)),
   fetch: (...a) => globalThis.fetch(...a),
 });
 
@@ -521,18 +523,27 @@ export const TOOLS = {
 
   ruview_mmwave_read: {
     title: 'Read mmWave radar',
-    description: 'Read a Seeed MR60BHA2 (60 GHz) or HLK-LD2410 (24 GHz) radar over USB-UART with firmware-identical frame/checksum parsing; auto-detects by baud and valid frames. Returns frame rates, checksum errors, presence, distance, and device-reported breathing/heart values. MCP requires device-access.',
+    description: 'Read a 60 GHz Seeed MR60BHA2 or 24 GHz HLK-LD2410 radar. source=serial (default): raw USB-UART frames with firmware-identical checksum parsing, auto-detected by baud. source=esphome: a radar kit running ESPHome (e.g. the Seeed MR60BHA2 kit) over its native API on a private-network host, read-only. Returns presence, distance and device-reported breathing/heart values. MCP requires device-access.',
     inputSchema: {
       type: 'object',
-      required: ['port'],
       properties: {
-        port: { type: 'string', minLength: 3, maxLength: 80, pattern: SERIAL_PORT_PATTERN },
-        model: { type: 'string', enum: ['auto', ...Object.keys(MMWAVE_MODELS)], description: 'Default auto.' },
+        source: { type: 'string', enum: ['serial', 'esphome'], description: 'Default serial.' },
+        port: { type: 'string', minLength: 3, maxLength: 80, pattern: SERIAL_PORT_PATTERN, description: 'Serial port (source=serial).' },
+        model: { type: 'string', enum: ['auto', ...Object.keys(MMWAVE_MODELS)], description: 'Default auto (source=serial).' },
+        host: { type: 'string', minLength: 1, maxLength: 253, description: 'ESPHome device IP or hostname on a private network (source=esphome).' },
+        api_port: { type: 'number', minimum: 1, maximum: 65535, description: 'ESPHome API port. Default 6053.' },
         seconds: { type: 'number', minimum: 1, maximum: 120, description: 'Default 10.' },
       },
     },
     handler(args = {}) {
-      return readMmwave(args, OPERATOR_DEPS);
+      if (args.source === 'esphome') {
+        if (!args.host) return { ok: false, reason: 'invalid_arguments', errors: ['$.host is required for source=esphome'] };
+        const { source, port, model, ...rest } = args;
+        return readEsphome(rest);
+      }
+      if (!args.port) return { ok: false, reason: 'invalid_arguments', errors: ['$.port is required for source=serial'] };
+      const { source, host, api_port: apiPort, ...rest } = args;
+      return readMmwave(rest, OPERATOR_DEPS);
     },
   },
 

@@ -143,12 +143,27 @@ function viewDoctor(r){
     return h('tr',null,h('td',null,h('span',{class:'badge','data-s':st},c.status)),h('td',{class:'id'},c.group+'/'+c.id),h('td',null,c.detail,c.remedy&&c.status!=='pass'?h('div',{class:'note'},'fix: '+c.remedy):null))});
   return [h('div',{class:'stats'},stat('Pass',s.pass||0),stat('Warn',s.warn||0),stat('Fail',s.fail||0),stat('Skip',s.skip||0)),h('table',null,h('tbody',null,rows))];
 }
+function viewRadar(r){
+  if(r.ok===false)return [failure(r)];
+  var d=r.device||{},present=r.presentNow!=null?r.presentNow:(r.presentFraction==null?null:r.presentFraction>=0.5);
+  var src=r.source==='esphome'?'ESPHome '+(d.esphomeVersion||'')+' · '+(d.name||r.host||'')+(d.projectVersion?' · '+d.projectVersion:''):(r.model||'radar')+' · '+(r.frames||0)+' frames · '+(r.checksumErrors||0)+' checksum errors';
+  return [
+    h('div',{class:'stats'},
+      stat('Presence',present==null?'—':present?'Detected':'None'),
+      stat('Distance',r.distanceCmMean==null?'—':num(r.distanceCmMean,1)+' cm'),
+      stat('Heart (device)',r.heartBpmMean==null?'—':num(r.heartBpmMean,1)+' bpm'),
+      stat('Breathing (device)',r.breathingBpmMean==null?'—':num(r.breathingBpmMean,1)+' bpm')),
+    r.entities?h('table',null,h('thead',null,h('tr',null,h('th',null,'Entity'),h('th',null,'Last'),h('th',null,'Updates'))),
+      h('tbody',null,r.entities.map(function(e){return h('tr',null,h('td',null,e.name),h('td',{class:'id'},e.last==null?'—':(typeof e.last==='number'?num(e.last,2):String(e.last))+(e.unit?' '+e.unit:'')),h('td',null,e.updates))}))):null,
+    h('p',{class:'note'},src),
+    h('p',{class:'note'},'Device-reported values computed by the radar firmware; not validated against a reference.')];
+}
 function viewGeneric(r){return [failure(r),h('pre',null,JSON.stringify(r,null,2))]}
 
 function render(){
   var r=state.result;if(!r)return;
   var t=state.tool||'';
-  var view=r.nodes||t==='ruview_esp32_capture'?['NODE STREAM',viewCapture]:r.devices?['DEVICES',viewDevices]:r.checks&&r.summary?['DOCTOR',viewDoctor]:[(t.replace(/^ruview_/,'').replace(/_/g,' ')||'RESULT').toUpperCase(),viewGeneric];
+  var view=r.nodes||t==='ruview_esp32_capture'?['NODE STREAM',viewCapture]:t==='ruview_mmwave_read'||r.heartBpmMean!==undefined?['60 GHZ RADAR',viewRadar]:r.devices?['DEVICES',viewDevices]:r.checks&&r.summary?['DOCTOR',viewDoctor]:[(t.replace(/^ruview_/,'').replace(/_/g,' ')||'RESULT').toUpperCase(),viewGeneric];
   app.replaceChildren(header(view[0],r));add(app,view[1](r));
   notifySize();
 }
@@ -183,13 +198,13 @@ export const CONSOLE_RESOURCE = Object.freeze({
 /** Resource-level metadata: an empty CSP allowlist (no external origins) for both host families. */
 export const CONSOLE_RESOURCE_META = Object.freeze({
   ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: true },
-  'openai/widgetDescription': 'Shows a RuView tool result: per-node CSI rate, loss and RSSI, device scans, or doctor checks, with a refresh button.',
+  'openai/widgetDescription': 'Shows a RuView tool result: per-node CSI rate, loss and RSSI, radar presence and vitals, device scans, or doctor checks, with a refresh button.',
   'openai/widgetPrefersBorder': true,
   'openai/widgetCSP': { connect_domains: [], resource_domains: [] },
 });
 
 /** Tools whose results render in the console widget. */
-export const UI_TOOLS = Object.freeze(['ruview_esp32_capture', 'ruview_devices_scan', 'ruview_doctor']);
+export const UI_TOOLS = Object.freeze(['ruview_esp32_capture', 'ruview_devices_scan', 'ruview_doctor', 'ruview_mmwave_read']);
 
 /** Tool-level metadata pointing a UI tool at the widget (MCP Apps + ChatGPT keys). */
 export function uiToolMeta() {

@@ -108,13 +108,13 @@ export async function handleRpc(msg, context = {}) {
  * (calibrate, serial monitor, flash) must never overlap. Everything else
  * answers immediately (ADR-263 O2). Shared by the stdio and HTTP transports.
  */
-export function createDispatcher(baseContext) {
+export function createDispatcher(baseContext, handler = handleRpc) {
   let chain = Promise.resolve();
   let queued = 0;
   const cancelled = new Set();
   const queuedIds = new Set();
   const context = { ...baseContext, cancelled, queuedIds };
-  const run = (msg) => handleRpc(msg, context).catch((err) => {
+  const run = (msg) => handler(msg, context).catch((err) => {
     log('handler error:', String(err));
     return msg && msg.id !== undefined ? fail(msg.id, -32603, String(err && err.message || err)) : null;
   });
@@ -147,10 +147,11 @@ export function parseGrants(env = process.env) {
   return String(env.RUVIEW_MCP_GRANTS || '').split(',').map((v) => v.trim()).filter(Boolean);
 }
 
-export function startMcpServer() {
-  log(`starting v${SERVER_INFO.version} (protocol ${SUPPORTED_PROTOCOLS[0]}, ${listTools().length} tools, stdio)`);
+/** stdio transport. `handler` lets an embedding package (the `ruview` umbrella) serve a merged tool set. */
+export function startMcpServer({ handler = handleRpc, label = `${listTools().length} tools` } = {}) {
+  log(`starting v${SERVER_INFO.version} (protocol ${SUPPORTED_PROTOCOLS[0]}, ${label}, stdio)`);
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
-  const { dispatch, idle } = createDispatcher({ source: 'mcp', transport: 'stdio', grants: parseGrants() });
+  const { dispatch, idle } = createDispatcher({ source: 'mcp', transport: 'stdio', grants: parseGrants() }, handler);
   const send = (res) => { if (res) process.stdout.write(JSON.stringify(res) + '\n'); };
 
   rl.on('line', (line) => {

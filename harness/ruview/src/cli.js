@@ -40,7 +40,7 @@ const VERB_TO_TOOL = {
 
 // Verbs whose kebab-case flags map 1:1 onto snake_case schema fields (ADR-369).
 const SNAKE_VERBS = new Set(['flash', 'flash-plan', 'train', 'train-plan', 'train-gate', 'devices', 'esp32', 'mmwave', 'lidar']);
-const NUMERIC_FLAGS = new Set(['baud', 'boot_log_seconds', 'samples', 'model_score', 'baseline_score', 'n_test', 'seconds', 'udp_port', 'max_packets', 'max_frames', 'node_id', 'analyze_max_frames']);
+const NUMERIC_FLAGS = new Set(['baud', 'boot_log_seconds', 'samples', 'model_score', 'baseline_score', 'n_test', 'seconds', 'udp_port', 'max_packets', 'max_frames', 'node_id', 'analyze_max_frames', 'api_port']);
 const BOOLEAN_FLAGS = new Set(['confirm', 'cuda', 'allow_unverified', 'analyze']);
 // Presentation-only flags never reach a tool schema.
 const UI_FLAGS = new Set(['json', 'watch', 'interval']);
@@ -70,7 +70,7 @@ function emit(tool, res, flags) {
 function progressLabel(tool, args) {
   if (tool === 'ruview_esp32_capture') return [`Listening on UDP ${args.bind || '0.0.0.0'}:${args.udp_port || 5005}`, args.seconds ?? 10];
   if (tool === 'ruview_node_monitor') return [`Reading ${args.port} at ${args.baud || 115200} baud`, args.seconds ?? 12];
-  if (tool === 'ruview_mmwave_read' || tool === 'ruview_lidar_read') return [`Reading ${args.port || args.url || 'device'}`, args.seconds ?? 10];
+  if (tool === 'ruview_mmwave_read' || tool === 'ruview_lidar_read') return [`Reading ${args.host ? `ESPHome ${args.host}` : args.port || args.url || 'device'}`, args.seconds ?? 10];
   return [null, 0];
 }
 
@@ -124,11 +124,11 @@ async function doctor(flags) {
   return report.ok ? 0 : 1;
 }
 
-async function mcp(rest, flags) {
+async function mcp(rest, flags, handler) {
   if (rest[0] !== undefined && rest[0] !== 'start') { console.error('Usage: ruview mcp start [--http [--host 127.0.0.1] [--port 8790] [--allow-origin URL]]'); return 2; }
   if (flags.http !== true) {
     const { startMcpServer } = await import('./mcp-server.js');
-    startMcpServer();
+    startMcpServer(handler ? { handler } : {});
     return new Promise(() => {}); // run until stdin closes
   }
   const { startMcpHttp, DEFAULT_HTTP_PORT } = await import('./mcp-http.js');
@@ -137,7 +137,7 @@ async function mcp(rest, flags) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) { console.error('mcp start: --port must be 0..65535'); return 2; }
   const allowOrigins = typeof flags['allow-origin'] === 'string' ? flags['allow-origin'].split(',').map((o) => o.trim()).filter(Boolean) : [];
   // The token is read from the environment, never from argv (process lists are visible to other users).
-  const srv = await startMcpHttp({ host, port, token: process.env.RUVIEW_MCP_TOKEN, allowOrigins });
+  const srv = await startMcpHttp({ host, port, token: process.env.RUVIEW_MCP_TOKEN, allowOrigins, ...(handler ? { handler } : {}) });
   const generated = !process.env.RUVIEW_MCP_TOKEN;
   process.stderr.write([
     `ruview MCP over HTTP on ${srv.url}${srv.loopback ? '' : '  (non-loopback bind: anyone who can reach this port and holds the token can call read tools)'}`,
@@ -180,6 +180,7 @@ Devices (ADR-373) — run on the machine the hardware is attached to:
         [--analyze [--node-id N] [--backend wasm|napi|auto]]  run live CSI through @ruvnet/ruview-kernel
         [--watch [--seconds 3]]                          live view: repeated windows with per-node trends
   mmwave --port <p> [--model auto|mr60bha2|ld2410] [--seconds 10]   60/24 GHz radar readout
+  mmwave --source esphome --host <ip> [--api-port 6053]   radar kit running ESPHome (e.g. Seeed MR60BHA2 kit)
   lidar --source rplidar --port <p> [--baud 115200]      RPLIDAR scan summary
   lidar --source iphone --url ws://HOST:8787/ws/lidar    iPhone LiDAR relay (token: RUVIEW_LIDAR_TOKEN)
 
@@ -229,7 +230,8 @@ function parseFlags(rest) {
   return f;
 }
 
-export async function run(args) {
+/** Run the CLI. `opts.mcpHandler` lets an embedding package serve a merged MCP tool set. */
+export async function run(args, opts = {}) {
   const cmd = args[0] ?? 'onboard';
   const rest = args.slice(1);
   const flags = parseFlags(rest);
@@ -288,7 +290,7 @@ export async function run(args) {
       console.log(readFileSync(p, 'utf8'));
       return 0;
     }
-    case 'mcp': return mcp(rest, flags);
+    case 'mcp': return mcp(rest, flags, opts.mcpHandler);
     case 'agent': {
       if (rest[0] !== 'run') { console.error('Usage: ruview agent run --host claude-code|codex --prompt "..." [--repo <dir>]'); return 2; }
       const [{ findRepoRoot }, { getHost }] = await Promise.all([tools(), import('./hosts/index.js')]);

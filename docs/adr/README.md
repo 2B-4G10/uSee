@@ -2,6 +2,7 @@
 
 Latest proposed decisions:
 
+- [ADR-376: `ruview` — one npm install for every RuView component](ADR-376-ruview-umbrella-npm-package.md)
 - [ADR-375: MCP Apps console, HTTP transport and terminal UI for `@ruvnet/ruview`](ADR-375-ruview-mcp-apps-console-http-transport-and-terminal-ui.md)
 - [ADR-374: Remote host access over SSH (read-only)](ADR-374-remote-host-access-over-ssh.md)
 - [ADR-373: Host device access layer — ESP32, mmWave, LiDAR](ADR-373-host-device-access-layer.md)

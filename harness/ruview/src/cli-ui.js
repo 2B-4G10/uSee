@@ -130,6 +130,27 @@ function renderFlash(r, s) {
   return lines.join('\n');
 }
 
+function renderMmwave(r, s) {
+  const lines = [head('RADAR', r, s), ...failureLines(r, s)];
+  if (r.ok === false) {
+    for (const a of r.attempts || []) lines.push(s.muted(`tried ${a.model}: ${a.bytes} bytes, ${a.frames} frames`));
+    return lines.join('\n');
+  }
+  const d = r.device || {};
+  lines.push(s.muted(r.source === 'esphome'
+    ? `ESPHome ${d.esphomeVersion || '?'} · ${d.name || r.host} · ${d.project || ''}${d.projectVersion ? ` ${d.projectVersion}` : ''} · ${r.stateUpdates} updates in ${r.seconds} s`
+    : `${r.model} (${r.band}) · ${r.frames} frames · ${r.checksumErrors} checksum errors · ${r.frameRateHz} Hz`));
+  const present = r.presentNow ?? (r.presentFraction == null ? null : r.presentFraction >= 0.5);
+  lines.push('', `${s.bold('presence')}  ${present == null ? '—' : present ? s.acid('● detected') : s.muted('○ none')}${r.presentFraction == null ? '' : s.muted(`  (${(r.presentFraction * 100).toFixed(0)}% of reports)`)}${r.targetsMax != null ? s.muted(`  targets ${r.targetsMax}`) : ''}`);
+  lines.push(`${s.bold('distance')}  ${r.distanceCmMean == null ? '—' : `${num(r.distanceCmMean, 1)} cm`}`);
+  lines.push(`${s.bold('heart')}     ${r.heartBpmMean == null ? '—' : `${num(r.heartBpmMean, 1)} bpm`}   ${s.bold('breathing')}  ${r.breathingBpmMean == null ? '—' : `${num(r.breathingBpmMean, 1)} bpm`}`);
+  if (r.entities) {
+    lines.push('', table([['ENTITY', 'LAST', 'UPDATES'], ...r.entities.map((e) => [e.name, e.last == null ? '—' : `${typeof e.last === 'number' ? num(e.last, 2) : e.last}${e.unit ? ` ${e.unit}` : ''}`, String(e.updates)])], s));
+  }
+  lines.push('', s.muted('device-reported values (computed by the radar firmware), not validated against a reference'));
+  return lines.join('\n');
+}
+
 function renderGeneric(tool, r, s) {
   const view = String(tool || 'result').replace(/^ruview_/, '').replace(/_/g, ' ').toUpperCase();
   const lines = [head(view, r, s), ...failureLines(r, s)];
@@ -150,6 +171,7 @@ export function renderResult(tool, r, { color = false, history } = {}) {
   if (tool === 'ruview_esp32_capture' || r.nodes) return renderCapture(r, s, history);
   if (tool === 'ruview_devices_scan') return renderDevices(r, s);
   if (tool === 'ruview_node_monitor') return renderMonitor(r, s);
+  if (tool === 'ruview_mmwave_read') return renderMmwave(r, s);
   if (tool === 'ruview_node_flash' || tool === 'ruview_firmware_plan') return renderFlash(r, s);
   return renderGeneric(tool, r, s);
 }

@@ -9,7 +9,23 @@
 export const KERNEL_PACKAGE = '@ruvnet/ruview-kernel';
 export const KERNEL_BACKENDS = Object.freeze(['wasm', 'napi', 'auto']);
 
-const defaultImporter = (specifier) => import(specifier);
+let packageImporter = (specifier) => import(specifier);
+const defaultImporter = (specifier) => packageImporter(specifier);
+
+/**
+ * Let an embedding package (the `ruview` umbrella, ADR-376) resolve the kernel
+ * from its own dependency tree. Node resolves bare specifiers relative to the
+ * importing file's real path, which misses a sibling dependency under linked or
+ * pnpm-style installs. Only the embedding code can call this; MCP arguments
+ * cannot choose the module.
+ */
+export function setKernelImporter(importer) {
+  if (typeof importer !== 'function') throw new TypeError('importer must be a function');
+  packageImporter = importer;
+}
+
+/** Import the kernel package through the active importer (used by doctor too). */
+export const importKernelPackage = () => defaultImporter(KERNEL_PACKAGE);
 
 async function importKernel(importer) {
   try {
