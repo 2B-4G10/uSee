@@ -51,8 +51,19 @@ function install(src, dir, name) {
   return { artifact: `${dir}/${name}`, sha256: digest };
 }
 
+/** Fail fast when the toolchain v2/ pins lacks the wasm32 target. */
+function requireWasmTarget() {
+  const r = spawnSync('rustup', ['target', 'list', '--installed'], { cwd: V2, encoding: 'utf8' });
+  if (r.status === 0 && !r.stdout.split(/\r?\n/).includes('wasm32-unknown-unknown')) {
+    console.error('wasm32-unknown-unknown is not installed for the toolchain pinned by v2/rust-toolchain.');
+    console.error('Fix: (cd v2 && rustup target add wasm32-unknown-unknown)');
+    process.exit(1);
+  }
+}
+
 const built = [];
 if (wantWasm) {
+  requireWasmTarget();
   cargo(['build', '-p', 'ruview-kernel', '--release', '--target', 'wasm32-unknown-unknown', '--locked'], V2);
   const src = join(V2, 'target', 'wasm32-unknown-unknown', 'release', 'ruview_kernel.wasm');
   built.push(install(src, 'wasm', 'ruview_kernel.wasm'));

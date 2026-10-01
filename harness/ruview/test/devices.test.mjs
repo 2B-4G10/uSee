@@ -66,7 +66,7 @@ test('ESP32 packets parse exactly like the firmware structs', () => {
 
 test('ESP32 capture receives a live UDP stream on loopback and measures loss', async () => {
   const port = 20000 + Math.floor(Math.random() * 20000);
-  const pending = captureEsp32({ udp_port: port, bind: '127.0.0.1', seconds: 1.5 });
+  const pending = captureEsp32({ udp_port: port, bind: '127.0.0.1', seconds: 5, max_packets: 7 });
   const sender = dgram.createSocket('udp4');
   await new Promise((r) => setTimeout(r, 150));
   const sends = [];
@@ -123,8 +123,10 @@ test('mmWave read auto-detects MR60BHA2 through the serial pump', async () => {
   const deps = pumpDeps(stream);
   const r = await readMmwave({ port: '/dev/ttyUSB0', seconds: 3 }, deps);
   assert.equal(r.ok, true, JSON.stringify(r));
-  assert.deepEqual([r.model, r.detected, r.frames, r.breathingBpmMean, r.heartBpmMean, r.distanceCmMean, r.presentFraction], ['mr60bha2', 'mr60bha2', 4, 14.5, 71, 92.5, 1]);
-  assert.equal(deps.calls[0].args[3], '115200');
+  // Probe (2 s) frames are kept and only the remaining 1 s is read again,
+  // so the fake pump's 4-frame stream is seen twice.
+  assert.deepEqual([r.model, r.detected, r.frames, r.breathingBpmMean, r.heartBpmMean, r.distanceCmMean, r.presentFraction], ['mr60bha2', 'mr60bha2', 8, 14.5, 71, 92.5, 1]);
+  assert.deepEqual(deps.calls.map((c) => [c.args[3], c.args[4]]), [['115200', '2'], ['115200', '1']]);
   const ld = await readMmwave({ port: 'COM5', model: 'ld2410', seconds: 2 }, pumpDeps([...ld2410Frame(3, 90, 60), ...ld2410Frame(0, 0, 0)]));
   assert.deepEqual([ld.ok, ld.model, ld.frames], [true, 'ld2410', 2]);
   const noise = await readMmwave({ port: 'COM5', seconds: 2 }, pumpDeps([1, 2, 3, 4, 5]));
@@ -171,11 +173,11 @@ test('iPhone LiDAR relay client returns statistics only and keeps the token out 
   class FakeWS {
     constructor(url) {
       opened = url;
-      setTimeout(() => { this.onmessage?.({ data: JSON.stringify(lidarPacket()) }); this.onmessage?.({ data: '{"type":"bogus"}' }); }, 20);
+      setTimeout(() => { this.onopen?.(); this.onmessage?.({ data: '{"type":"bogus"}' }); this.onmessage?.({ data: JSON.stringify(lidarPacket()) }); }, 20);
     }
     close() {}
   }
-  const r = await readIphoneLidar({ url: 'ws://10.0.0.5:8787/ws/lidar', seconds: 1 }, { WebSocket: FakeWS, env: { RUVIEW_LIDAR_TOKEN: 'tok123' } });
+  const r = await readIphoneLidar({ url: 'ws://10.0.0.5:8787/ws/lidar', seconds: 5, max_frames: 1 }, { WebSocket: FakeWS, env: { RUVIEW_LIDAR_TOKEN: 'tok123' } });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.frames, 1);
   assert.equal(r.rejectedFrames, 1);
@@ -184,7 +186,7 @@ test('iPhone LiDAR relay client returns statistics only and keeps the token out 
   assert.equal(r.relay, 'ws://10.0.0.5:8787/ws/lidar', 'token never echoed');
   assert.ok(!JSON.stringify(r).includes('tok123'));
   class NeverOpens { constructor() { setTimeout(() => this.onerror?.({}), 10); } close() {} }
-  const refused = await readIphoneLidar({ url: 'ws://10.0.0.5:8787/ws/lidar', seconds: 1 }, { WebSocket: NeverOpens, env: {} });
+  const refused = await readIphoneLidar({ url: 'ws://10.0.0.5:8787/ws/lidar', seconds: 30 }, { WebSocket: NeverOpens, env: {} });
   assert.deepEqual([refused.ok, refused.reason], [false, 'connect_failed']);
   assert.equal((await readIphoneLidar({ url: 'ws://h/ws/lidar?token=x' })).reason, 'invalid_url');
   assert.equal((await readIphoneLidar({ url: 'http://h/ws' })).reason, 'invalid_url');

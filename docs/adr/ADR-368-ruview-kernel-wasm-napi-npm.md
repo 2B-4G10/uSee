@@ -110,6 +110,61 @@ module or artifact path. The capability appears in `ruview_guidance` as
 None of these numbers says anything about real-world vital-sign accuracy.
 That still requires the ADR-293 ground-truth protocol with a reference device.
 
+## Amendment 1 (2026-10-01): binary transport and optimization evidence
+
+**Profile (MEASURED on one Linux x64 development container, 2 400 frames ×
+56 subcarriers).** JSON was the dominant cost:
+
+- JS `JSON.stringify` of the request alone took 52–78 ms against
+  107–124 ms for a whole `analyze`.
+- Rust then re-parsed about 270 000 numbers.
+
+**Decision.** Add a binary fast path without changing the ABI version.
+
+- New operations `analyze_flat` and `session_push_flat`, carried by
+  `call_f64(op, json, &[f64])`:
+  - WASM: `rvk_call_f64`, which reads bytes so alignment does not matter;
+  - napi: `callF64(op, json, Float64Array)`.
+- `analyze()` and `session.push()` pack uniform frames into one
+  `Float64Array` (all amplitudes, then all phases) and use the binary path
+  automatically. Irregular input still takes the JSON path so its error names
+  the bad frame.
+- `analyzeFlat(Float64Array, …)` is the zero-copy entry.
+- `Session::step` is shared by both paths.
+
+**Evidence.**
+
+- **Byte-identical outputs.** On identical `f64` inputs the two paths
+  produce byte-identical JSON (`tests/abi.rs`).
+- **A JSON precision finding.** serde_json's default float parser is not
+  correctly rounded, so the JSON transport perturbs inputs by ULPs (34 of 160
+  amplitude values in a 2 s, 4-subcarrier SYNTHETIC sample). The binary path is bit-exact.
+- **Speed.** MEASURED, `ruview-kernel bench --seconds 120`, same host:
+
+  | Backend | JSON transport | Binary transport | Speed-up |
+  |---|---|---|---|
+  | wasm | 134.8 ms | 47.8 ms (~50 000 frames/s) | 2.82× |
+  | napi | 109.7 ms | 44.8 ms (~53 600 frames/s) | 2.45× |
+
+- **Remaining cost is DSP.** Native timing gives heart-rate extraction
+  20.8–22.9 ms of 30.6–38.3 ms (about 60–68%, MEASURED; reproducer:
+  `cargo run --release -p ruview-kernel --example profile_stages`): the per-frame autocorrelation over the 15 s window
+  in `wifi-densepose-vitals`. That crate is shared with the production sensing
+  server, and an incremental ACF would change floating-point summation order
+  and therefore outputs. It is left as a follow-up that needs its own review
+  and regression evidence.
+
+**Rejected after measurement.** MEASURED, three runs on the same host;
+reproducer: `node bench/wasm-variants.mjs` in `harness/ruview-kernel`. Each
+run is the median of 15 `analyzeFlat` calls on 2 400 frames. All variants
+produced byte-identical outputs.
+
+| Variant | Size | Median ms (3 runs) | Decision |
+|---|---|---|---|
+| baseline (`opt-level = 3`) | 244 KB | 38.3–40.6 | kept |
+| `+simd128` | 242 KB | 37.4–54.7 | rejected: no consistent gain, and it needs SIMD-capable engines |
+| `opt-level = "s"` | 227 KB | 40.8–70.1 | rejected: consistently slower for a 17 KB size saving |
+
 ## Consequences
 
 - JavaScript consumers get real RuView DSP without a server, in Node or the

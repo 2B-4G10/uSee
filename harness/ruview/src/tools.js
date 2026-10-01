@@ -522,6 +522,7 @@ export const TOOLS = {
         baud: { type: 'number', enum: [115200, 256000, 460800, 921600], description: 'rplidar baud. Default 115200 (A1/A2M8).' },
         url: { type: 'string', minLength: 5, maxLength: 512, description: 'iphone relay: ws(s)://host:port/ws/lidar (no token in the URL).' },
         seconds: { type: 'number', minimum: 1, maximum: 60, description: 'Default 5.' },
+        max_frames: { type: 'number', minimum: 1, maximum: 10000, description: 'iphone: stop after this many depth frames.' },
       },
     },
     handler(args = {}) {

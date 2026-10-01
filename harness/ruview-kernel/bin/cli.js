@@ -138,17 +138,18 @@ export async function run(args) {
       const seconds = number(flags, 'seconds', 120);
       const { frames } = k.synthesize({ seconds });
       k.analyze(frames.slice(0, 200)); // warm-up
-      const t0 = performance.now();
       const iterations = 5;
-      for (let i = 0; i < iterations; i++) k.analyze(frames);
-      const ms = (performance.now() - t0) / iterations;
+      const time = (fn) => { const t0 = performance.now(); for (let i = 0; i < iterations; i++) fn(); return (performance.now() - t0) / iterations; };
+      const ms = time(() => k.analyze(frames));
+      const jsonMs = time(() => k.call('analyze', { config: {}, frames, include_readings: false }));
       pjson({
         evidence: 'MEASURED',
         reproducer: `npx @ruvnet/ruview-kernel bench --backend ${k.backend} --seconds ${seconds}`,
         host: { node: process.version, platform: process.platform, arch: process.arch },
-        backend: k.backend, frames: frames.length, msPerAnalyze: Number(ms.toFixed(2)),
-        framesPerSecond: Math.round(frames.length / (ms / 1000)),
-        note: 'Includes JSON encode/decode across the ABI; single-host timing, not a cross-host claim.',
+        backend: k.backend, frames: frames.length, transport: k.binary ? 'binary' : 'json',
+        msPerAnalyze: Number(ms.toFixed(2)), framesPerSecond: Math.round(frames.length / (ms / 1000)),
+        jsonTransportMs: Number(jsonMs.toFixed(2)), speedupVsJson: Number((jsonMs / ms).toFixed(2)),
+        note: 'Includes transfer across the ABI; single-host timing, not a cross-host claim.',
       });
       return 0;
     }

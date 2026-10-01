@@ -48,7 +48,8 @@
     "manifest:update": "node ./scripts/update-manifest.mjs",
     "manifest:verify": "node ./scripts/verify-manifest.mjs",
     "prepack": "node ./scripts/sync-skills.mjs && node ./scripts/update-manifest.mjs --quiet && node ./scripts/verify-manifest.mjs --quiet",
-    "prepublishOnly": "npm test && node ./scripts/verify-manifest.mjs"
+    "prepublishOnly": "npm test && node ./scripts/verify-manifest.mjs",
+    "test:e2e:devices": "node --test test/e2e/devices.e2e.mjs"
   },
   "keywords": [
     "wifi-sensing",

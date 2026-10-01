@@ -140,31 +140,51 @@ export function parseMmwave(model, bytes) {
   return { frames, errors: parser.errors };
 }
 
-/** Read an mmWave radar. args: { port, model: auto|mr60bha2|ld2410, seconds }. */
+/**
+ * Read an mmWave radar. args: { port, model: auto|mr60bha2|ld2410, seconds }.
+ * Auto-detect probes each model's baud for up to 2 s; the probe's frames are
+ * kept and only the remainder of the window is read afterwards, so a request
+ * for N seconds costs about N seconds rather than probe + N.
+ */
 export async function readMmwave(args, deps) {
   const seconds = args.seconds ?? 10;
-  const models = !args.model || args.model === 'auto' ? ['mr60bha2', 'ld2410'] : [args.model];
+  const auto = !args.model || args.model === 'auto';
+  const models = auto ? ['mr60bha2', 'ld2410'] : [args.model];
+  const probeSeconds = auto ? Math.min(seconds, 2) : seconds;
   const attempts = [];
-  for (const model of models) {
-    let cap;
+  const capture = async (model, secs) => {
     try {
-      cap = await readSerial({ port: args.port, baud: MMWAVE_MODELS[model].baud, seconds: models.length > 1 ? Math.min(seconds, 4) : seconds }, deps);
+      return await readSerial({ port: args.port, baud: MMWAVE_MODELS[model].baud, seconds: secs }, deps);
     } catch (error) {
       return { ok: false, reason: error.reason || 'invalid_arguments', detail: error.message };
     }
+  };
+  for (const model of models) {
+    const cap = await capture(model, probeSeconds);
     if (!cap.ok) return { ok: false, reason: cap.reason, detail: cap.detail, remedy: cap.remedy };
-    const { frames, errors } = parseMmwave(model, cap.bytes);
+    let { frames, errors } = parseMmwave(model, cap.bytes);
     attempts.push({ model, bytes: cap.bytes.length, frames: frames.length, errors });
-    if (frames.length >= 2) {
-      // Auto-detect used a short probe; re-read for the full window on the detected model.
-      if (models.length > 1 && seconds > 4) return { ...(await readMmwave({ ...args, model }, deps)), detected: model };
-      return {
-        ok: true,
-        ...summarizeMmwave(model, frames, errors, cap.bytes.length, cap.seconds),
-        detected: models.length > 1 ? model : undefined,
-        evidence: 'MEASURED: device-reported radar values read on this host (not an accuracy claim)',
-      };
+    if (frames.length < 2) continue;
+    let bytes = cap.bytes.length;
+    let elapsed = cap.seconds;
+    const remaining = seconds - probeSeconds;
+    if (auto && remaining >= 0.5) {
+      const more = await capture(model, remaining);
+      if (more.ok) {
+        // A fresh parser: the probe may have ended mid-frame.
+        const extra = parseMmwave(model, more.bytes);
+        frames = frames.concat(extra.frames);
+        errors += extra.errors;
+        bytes += more.bytes.length;
+        elapsed += more.seconds;
+      }
     }
+    return {
+      ok: true,
+      ...summarizeMmwave(model, frames, errors, bytes, elapsed),
+      ...(auto ? { detected: model } : {}),
+      evidence: 'MEASURED: device-reported radar values read on this host (not an accuracy claim)',
+    };
   }
   return {
     ok: false, reason: 'no_valid_frames', attempts,

@@ -46,6 +46,8 @@ pub const MAX_SUBCARRIERS: usize = 512;
 pub const MAX_FRAMES_PER_CALL: usize = 100_000;
 /// Maximum frames `synthesize` may generate.
 pub const MAX_SYNTH_FRAMES: usize = 100_000;
+/// Maximum f64 values in one binary (flat) request.
+pub const MAX_FLAT_VALUES: usize = MAX_INPUT_BYTES / 8;
 /// Maximum concurrently open sessions.
 pub const MAX_SESSIONS: usize = 64;
 
@@ -59,6 +61,8 @@ pub const OPERATIONS: &[&str] = &[
     "session_push",
     "session_summary",
     "session_close",
+    "analyze_flat",
+    "session_push_flat",
 ];
 
 /// Structured kernel error.
@@ -317,77 +321,116 @@ impl Session {
         for (i, f) in frames.iter().enumerate() {
             self.check_frame(i, f)?;
         }
-        let n = self.config.n_subcarriers;
-        let zeros = vec![0.0; n];
         let mut out = Vec::new();
         for f in frames {
-            let phases = if f.phases.is_empty() {
-                zeros.clone()
-            } else {
-                f.phases.clone()
-            };
-            let frame = CsiFrame {
-                amplitudes: f.amplitudes.clone(),
-                phases,
-                n_subcarriers: n,
-                sample_index: self.frames,
-                sample_rate_hz: self.config.sample_rate_hz,
-            };
-            self.frames += 1;
-            let Some(residuals) = self.pre.process(&frame) else {
-                continue;
-            };
-            let motion = (residuals.iter().map(|r| r * r).sum::<f64>() / n as f64).sqrt();
-            self.motion_sum += motion;
-            if let Some(rr) = self.breathing.extract(&residuals, &self.weights) {
-                self.last_rr = rr;
-            }
-            if let Some(hr) = self.heart.extract(&residuals, &frame.phases) {
-                self.last_hr = hr;
-            }
-            if self.frames % self.emit_every as u64 == 0 {
-                let t_secs = self.frames as f64 / self.config.sample_rate_hz;
-                let signal_quality = (self.last_rr.confidence + self.last_hr.confidence) / 2.0;
-                let vital = VitalReading {
-                    respiratory_rate: self.last_rr.clone(),
-                    heart_rate: self.last_hr.clone(),
-                    subcarrier_count: n,
-                    signal_quality,
-                    timestamp_secs: t_secs,
-                };
-                let alerts: Vec<Alert> = if self.last_rr.status == VitalStatus::Unavailable
-                    && self.last_hr.status == VitalStatus::Unavailable
-                {
-                    Vec::new() // warm-up: nothing to judge yet
-                } else {
-                    self.anomaly
-                        .check(&vital)
-                        .into_iter()
-                        .map(|a| Alert {
-                            vital: a.vital_type,
-                            kind: a.alert_type,
-                            severity: a.severity,
-                            message: a.message,
-                        })
-                        .collect()
-                };
-                self.alerts += alerts.len() as u64;
-                self.store.push(vital);
-                self.readings += 1;
-                let reading = Reading {
-                    frame: self.frames,
-                    t_secs,
-                    respiratory: (&self.last_rr).into(),
-                    heart: (&self.last_hr).into(),
-                    motion_energy: motion,
-                    signal_quality,
-                    alerts,
-                };
-                self.last = Some(reading.clone());
-                out.push(reading);
+            let phases = (!f.phases.is_empty()).then_some(f.phases.as_slice());
+            if let Some(r) = self.step(&f.amplitudes, phases) {
+                out.push(r);
             }
         }
         Ok(out)
+    }
+
+    /// Binary fast path (ADR-368): `data` holds every frame's amplitudes
+    /// back to back (`frames * n` values), followed by the same layout for
+    /// phases when `with_phases`. Validated all-or-nothing like [`push`].
+    pub fn push_flat(&mut self, data: &[f64], with_phases: bool) -> KResult<Vec<Reading>> {
+        let n = self.config.n_subcarriers;
+        let planes = if with_phases { 2 } else { 1 };
+        if data.len() % (n * planes) != 0 {
+            return Err(KernelError::invalid(format!(
+                "flat data length {} is not a multiple of n_subcarriers * {planes} ({})",
+                data.len(),
+                n * planes
+            )));
+        }
+        let count = data.len() / (n * planes);
+        if count > MAX_FRAMES_PER_CALL {
+            return Err(KernelError::new(
+                "limit_exceeded",
+                format!("at most {MAX_FRAMES_PER_CALL} frames per call"),
+            ));
+        }
+        if let Some(i) = data.iter().position(|v| !v.is_finite() || v.abs() > 1.0e9) {
+            return Err(KernelError::invalid(format!(
+                "frames[{}] contains a non-finite or out-of-range value",
+                (i % (count * n).max(1)) / n
+            )));
+        }
+        let (amps, phases) = data.split_at(count * n);
+        let mut out = Vec::new();
+        for k in 0..count {
+            let a = &amps[k * n..(k + 1) * n];
+            let p = with_phases.then(|| &phases[k * n..(k + 1) * n]);
+            if let Some(r) = self.step(a, p) {
+                out.push(r);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Process one validated frame; returns a reading at emission boundaries.
+    fn step(&mut self, amplitudes: &[f64], phases: Option<&[f64]>) -> Option<Reading> {
+        let n = self.config.n_subcarriers;
+        let frame = CsiFrame {
+            amplitudes: amplitudes.to_vec(),
+            phases: phases.map_or_else(|| vec![0.0; n], <[f64]>::to_vec),
+            n_subcarriers: n,
+            sample_index: self.frames,
+            sample_rate_hz: self.config.sample_rate_hz,
+        };
+        self.frames += 1;
+        let residuals = self.pre.process(&frame)?;
+        let motion = (residuals.iter().map(|r| r * r).sum::<f64>() / n as f64).sqrt();
+        self.motion_sum += motion;
+        if let Some(rr) = self.breathing.extract(&residuals, &self.weights) {
+            self.last_rr = rr;
+        }
+        if let Some(hr) = self.heart.extract(&residuals, &frame.phases) {
+            self.last_hr = hr;
+        }
+        if self.frames % self.emit_every as u64 != 0 {
+            return None;
+        }
+        let t_secs = self.frames as f64 / self.config.sample_rate_hz;
+        let signal_quality = (self.last_rr.confidence + self.last_hr.confidence) / 2.0;
+        let vital = VitalReading {
+            respiratory_rate: self.last_rr.clone(),
+            heart_rate: self.last_hr.clone(),
+            subcarrier_count: n,
+            signal_quality,
+            timestamp_secs: t_secs,
+        };
+        let alerts: Vec<Alert> = if self.last_rr.status == VitalStatus::Unavailable
+            && self.last_hr.status == VitalStatus::Unavailable
+        {
+            Vec::new() // warm-up: nothing to judge yet
+        } else {
+            self.anomaly
+                .check(&vital)
+                .into_iter()
+                .map(|a| Alert {
+                    vital: a.vital_type,
+                    kind: a.alert_type,
+                    severity: a.severity,
+                    message: a.message,
+                })
+                .collect()
+        };
+        self.alerts += alerts.len() as u64;
+        self.store.push(vital);
+        self.readings += 1;
+        let reading = Reading {
+            frame: self.frames,
+            t_secs,
+            respiratory: (&self.last_rr).into(),
+            heart: (&self.last_hr).into(),
+            motion_energy: motion,
+            signal_quality,
+            alerts,
+        };
+        self.last = Some(reading.clone());
+        Some(reading)
     }
 
     pub fn summary(&self) -> Summary {
@@ -565,6 +608,25 @@ struct PushRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct AnalyzeFlatRequest {
+    #[serde(default)]
+    config: SessionConfig,
+    #[serde(default)]
+    phases: bool,
+    #[serde(default)]
+    include_readings: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PushFlatRequest {
+    session: u32,
+    #[serde(default)]
+    phases: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct HandleRequest {
     session: u32,
 }
@@ -592,6 +654,7 @@ pub fn info() -> Value {
             "max_frames_per_call": MAX_FRAMES_PER_CALL,
             "max_synth_frames": MAX_SYNTH_FRAMES,
             "max_sessions": MAX_SESSIONS,
+            "max_flat_values": MAX_FLAT_VALUES,
         },
         "target": if cfg!(target_arch = "wasm32") { "wasm32" } else { "native" },
         "evidence_policy": "Outputs are signal-processing estimates, not clinical or camera-grade measurements; synthesize() output is SYNTHETIC.",
@@ -671,6 +734,9 @@ fn dispatch(op: &str, input: &str) -> KResult<Value> {
                 Ok(json!({ "session": req.session, "closed": closed }))
             })
         }
+        "analyze_flat" | "session_push_flat" => Err(KernelError::invalid(format!(
+            "{op} takes binary frame data; use call_f64"
+        ))),
         _ => Err(KernelError::new(
             "unknown_operation",
             format!(
@@ -681,12 +747,63 @@ fn dispatch(op: &str, input: &str) -> KResult<Value> {
     }
 }
 
+fn dispatch_f64(op: &str, input: &str, data: &[f64]) -> KResult<Value> {
+    if input.len() > MAX_INPUT_BYTES {
+        return Err(KernelError::new(
+            "limit_exceeded",
+            format!("request exceeds {MAX_INPUT_BYTES} bytes"),
+        ));
+    }
+    if data.len() > MAX_FLAT_VALUES {
+        return Err(KernelError::new(
+            "limit_exceeded",
+            format!("flat data exceeds {MAX_FLAT_VALUES} values"),
+        ));
+    }
+    match op {
+        "analyze_flat" => {
+            let req: AnalyzeFlatRequest = parse(input)?;
+            let mut s = Session::new(req.config)?;
+            let readings = s.push_flat(data, req.phases)?;
+            let mut out = json!({ "config": s.config(), "summary": s.summary() });
+            if req.include_readings {
+                out["readings"] = to_value(&readings)?;
+            }
+            Ok(out)
+        }
+        "session_push_flat" => {
+            let req: PushFlatRequest = parse(input)?;
+            with_registry(|r| {
+                let s = r
+                    .sessions
+                    .get_mut(&req.session)
+                    .ok_or_else(|| KernelError::new("unknown_session", "no such session"))?;
+                let readings = s.push_flat(data, req.phases)?;
+                Ok(json!({ "session": req.session, "readings": readings, "frames": s.frames }))
+            })
+        }
+        _ => Err(KernelError::invalid(format!(
+            "{op} does not take binary frame data"
+        ))),
+    }
+}
+
+fn envelope(result: KResult<Value>) -> String {
+    match result {
+        Ok(result) => json!({ "ok": true, "result": result }),
+        Err(e) => json!({ "ok": false, "error": { "code": e.code, "message": e.message } }),
+    }
+    .to_string()
+}
+
 /// The single ABI entry point: operation name + JSON request → JSON envelope.
 /// Never panics on caller input.
 pub fn call(op: &str, input: &str) -> String {
-    let envelope = match dispatch(op, input) {
-        Ok(result) => json!({ "ok": true, "result": result }),
-        Err(e) => json!({ "ok": false, "error": { "code": e.code, "message": e.message } }),
-    };
-    envelope.to_string()
+    envelope(dispatch(op, input))
+}
+
+/// Binary fast path: same envelope, with frame data as a flat `f64` slice
+/// (`analyze_flat`, `session_push_flat`) instead of JSON numbers.
+pub fn call_f64(op: &str, input: &str, data: &[f64]) -> String {
+    envelope(dispatch_f64(op, input, data))
 }

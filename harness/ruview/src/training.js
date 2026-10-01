@@ -150,9 +150,9 @@ export async function runTraining(args, deps) {
   const r = await deps.exec(plan.cmd, plan.args, { cwd: plan.cwd, timeoutMs: plan.timeoutMs });
   const text = `${r.stdout}\n${r.stderr}`;
   const hint = r.ok ? null : /Cannot find a libtorch install/i.test(text)
-    ? 'libtorch not found: set LIBTORCH, or LIBTORCH_USE_PYTORCH=1 with the PyTorch version tch expects installed (tch 0.24 → torch 2.11.0).'
+    ? 'libtorch not found: set LIBTORCH, or LIBTORCH_USE_PYTORCH=1 with the PyTorch version tch expects installed (tch 0.24 expects torch 2.11; see the torch-sys build script).'
     : /torch_api(?:_generated)?\.cpp|version mismatch|LIBTORCH_BYPASS_VERSION_CHECK/i.test(text)
-      ? 'libtorch version does not match the tch crate (tch 0.24 expects torch 2.11.0); install that version instead of bypassing the check.'
+      ? 'libtorch version does not match the tch crate (tch 0.24 expects torch 2.11); install that version instead of bypassing the check.'
       : /libtorch|torch-sys|LIBTORCH/i.test(text)
         ? 'libtorch build/link failed: check LIBTORCH / LD_LIBRARY_PATH (DYLD_LIBRARY_PATH on macOS).'
         : /requires the `tch-backend`/i.test(text) ? 'Build with the tch-backend feature.' : null;

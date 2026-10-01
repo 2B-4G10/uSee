@@ -91,7 +91,7 @@ function loadNapi(options) {
   if (abi !== ABI_VERSION) throw new KernelError('abi_mismatch', `napi ABI ${abi} != loader ABI ${ABI_VERSION}`);
   return createKernel((op, json) => addon.call(op, json), {
     backend: 'napi', abi, triple, artifact: path, sha256: artifact.sha256, integrity: artifact.integrity,
-  });
+  }, typeof addon.callF64 === 'function' ? (op, json, data) => addon.callF64(op, json, data) : null);
 }
 
 /**

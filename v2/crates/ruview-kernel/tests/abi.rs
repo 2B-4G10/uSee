@@ -172,3 +172,100 @@ fn session_count_is_bounded() {
         ok("session_close", json!({ "session": id }));
     }
 }
+
+fn flatten(frames: &[ruview_kernel::FrameInput], with_phases: bool) -> Vec<f64> {
+    let mut out: Vec<f64> = frames
+        .iter()
+        .flat_map(|f| f.amplitudes.iter().copied())
+        .collect();
+    if with_phases {
+        out.extend(frames.iter().flat_map(|f| f.phases.iter().copied()));
+    }
+    out
+}
+
+#[test]
+fn flat_binary_path_matches_json_path_exactly() {
+    let req = SynthRequest {
+        seconds: 40.0,
+        n_subcarriers: 24,
+        ..SynthRequest::default()
+    };
+    let frames = synthesize(&req).unwrap();
+    let config = json!({ "n_subcarriers": 24 });
+    for with_phases in [true, false] {
+        let json_frames: Vec<Value> = frames
+            .iter()
+            .map(|f| {
+                if with_phases {
+                    json!(f)
+                } else {
+                    json!({ "amplitudes": f.amplitudes })
+                }
+            })
+            .collect();
+        let body = json!({ "config": config, "frames": json_frames, "include_readings": true })
+            .to_string();
+        let via_json = call("analyze", &body);
+        // serde_json's default float parser is not correctly rounded, so the
+        // JSON transport itself perturbs inputs by ULPs. Feed the flat path the
+        // exact f64 values the JSON path decoded; the outputs must then match
+        // byte for byte because both run the same Session::step.
+        let decoded: Vec<ruview_kernel::FrameInput> =
+            serde_json::from_value(serde_json::from_str::<Value>(&body).unwrap()["frames"].clone())
+                .unwrap();
+        let via_flat = ruview_kernel::call_f64(
+            "analyze_flat",
+            &json!({ "config": config, "phases": with_phases, "include_readings": true })
+                .to_string(),
+            &flatten(&decoded, with_phases),
+        );
+        assert_eq!(
+            via_json, via_flat,
+            "flat and JSON transports must be byte-identical (phases={with_phases})"
+        );
+    }
+}
+
+#[test]
+fn flat_binary_path_validates_shape_and_values() {
+    let code = |op: &str, req: Value, data: &[f64]| -> String {
+        let v: Value =
+            serde_json::from_str(&ruview_kernel::call_f64(op, &req.to_string(), data)).unwrap();
+        assert_eq!(v["ok"], false, "{v}");
+        v["error"]["code"].as_str().unwrap().to_string()
+    };
+    let cfg = json!({ "config": { "n_subcarriers": 4 } });
+    assert_eq!(
+        code("analyze_flat", cfg.clone(), &[1.0; 6]),
+        "invalid_request"
+    );
+    assert_eq!(
+        code("analyze_flat", cfg.clone(), &[1.0, 2.0, f64::NAN, 4.0]),
+        "invalid_request"
+    );
+    assert_eq!(
+        code("analyze_flat", cfg.clone(), &[1.0, 2.0, 3.0, 2.0e9]),
+        "invalid_request"
+    );
+    assert_eq!(code("info", json!({}), &[1.0]), "invalid_request");
+    assert_eq!(
+        code(
+            "session_push_flat",
+            json!({ "session": 999_999 }),
+            &[1.0; 4]
+        ),
+        "unknown_session"
+    );
+    // The JSON entry point refuses the binary-only operations.
+    let v: Value = serde_json::from_str(&call("analyze_flat", "{}")).unwrap();
+    assert_eq!(v["error"]["code"], "invalid_request");
+    // Empty input is a valid, empty analysis.
+    let v: Value = serde_json::from_str(&ruview_kernel::call_f64(
+        "analyze_flat",
+        &cfg.to_string(),
+        &[],
+    ))
+    .unwrap();
+    assert_eq!(v["result"]["summary"]["frames"], 0);
+}

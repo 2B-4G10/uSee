@@ -104,6 +104,25 @@ Development container, Linux x64, Node 22. No physical sensors were attached.
   captures. Each modality needs one real capture before its parser is called
   hardware-validated.
 
+## Amendment 1 (2026-10-01): e2e suite and latency
+
+- `harness/ruview/test/e2e/devices.e2e.mjs` (`npm run test:e2e:devices`, CI
+  workflow `ruview-device-e2e.yml`) automates the emulated-device runs above
+  through the real CLI:
+  - MR60BHA2 and RPLIDAR on pseudo-terminals, read via real pyserial;
+  - an ESP32 UDP node;
+  - the real iPhone relay.
+- The harness still refuses `/dev/pts/*` port names. The suite links each pty
+  to `/dev/ttyRUVIEWE2E<n>` with root or `sudo -n`.
+- `RUVIEW_E2E_REQUIRE=1` turns missing prerequisites into failures.
+- mmWave auto-detect keeps its probe frames (≤ 2 s per model) and reads only
+  the remainder of the window. A 5 s request previously cost about 9 s.
+- `ruview_lidar_read` (iPhone) gains `max_frames` and returns immediately on
+  a refused connection.
+- MEASURED wall time for the device e2e suite on the development container:
+  19.6 s before these changes, 5.6 s after (concurrent cases, no redundant
+  re-reads).
+
 ## Consequences
 
 - One command per modality works across CLI, MCP and SDK, with actionable

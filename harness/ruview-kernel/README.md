@@ -51,6 +51,23 @@ const readings = session.push(frames.slice(0, 200));
 session.close();
 ```
 
+### Binary fast path
+
+`analyze()` and `session.push()` automatically send uniform frames as one
+`Float64Array` (all amplitudes, then all phases) instead of JSON numbers.
+Irregular input still goes through JSON, so errors name the bad frame. To
+skip packing entirely:
+
+```js
+const data = new Float64Array(frames * 56 * 2);   // amplitudes…, then phases…
+kernel.analyzeFlat(data, { n_subcarriers: 56 }, { phases: true });
+```
+
+MEASURED on one Linux x64 host (`ruview-kernel bench --seconds 120`): 2.8×
+(wasm) and 2.5× (napi) faster than the JSON transport for 2 400 frames. The
+binary path is also bit-exact, while JSON number parsing can move inputs by
+ULPs.
+
 In a browser, fetch the module yourself and use the filesystem-free entry:
 
 ```js

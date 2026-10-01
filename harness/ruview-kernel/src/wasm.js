@@ -66,11 +66,36 @@ export function createWasmTransport(module) {
     }
   };
   transport.generation = () => generation;
+  transport.f64 = (op, json, data) => {
+    if (!exports) { exports = instantiate(module); generation += 1; }
+    if (typeof exports.rvk_call_f64 !== 'function') throw new KernelError('backend_unavailable', 'WASM module predates the binary transport');
+    try {
+      const [opPtr, opLen] = write(exports, op);
+      const [inPtr, inLen] = write(exports, json);
+      const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      const dataPtr = exports.rvk_alloc(bytes.length);
+      if (dataPtr === 0) throw new KernelError('out_of_memory', 'kernel allocation failed');
+      new Uint8Array(exports.memory.buffer, dataPtr, bytes.length).set(bytes);
+      const packed = exports.rvk_call_f64(opPtr, opLen, inPtr, inLen, dataPtr, bytes.length);
+      if (packed === 0n) throw new KernelError('out_of_memory', 'kernel response allocation failed');
+      const ptr = Number(packed >> 32n);
+      const len = Number(packed & 0xffffffffn);
+      const text = decoder.decode(new Uint8Array(exports.memory.buffer, ptr, len).slice());
+      exports.rvk_free(ptr, len);
+      return text;
+    } catch (error) {
+      if (error instanceof KernelError) throw error;
+      exports = null;
+      throw new KernelError('trap', `WASM kernel trapped: ${error?.message || error}`);
+    }
+  };
   return transport;
 }
 
 /** Build the high-level kernel API from WASM bytes (browser or Node). */
 export function loadWasmKernelFromBytes(bytes, meta = {}) {
   const module = compileKernelModule(bytes);
-  return createKernel(createWasmTransport(module), { backend: 'wasm', abi: ABI_VERSION, ...meta });
+  const transport = createWasmTransport(module);
+  const hasF64 = WebAssembly.Module.exports(module).some((e) => e.name === 'rvk_call_f64');
+  return createKernel(transport, { backend: 'wasm', abi: ABI_VERSION, ...meta }, hasF64 ? transport.f64 : null);
 }

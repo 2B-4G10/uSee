@@ -60,6 +60,12 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # v2/rust-toolchain pins its own channel; the target must be installed
+      # for that toolchain, not only for the action's default `stable`.
+      - name: Add wasm32 target to the pinned v2 toolchain
+        working-directory: v2
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:

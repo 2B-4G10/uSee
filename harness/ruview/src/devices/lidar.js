@@ -93,11 +93,13 @@ export function depthStats(packet) {
 
 /**
  * Connect to the iPhone LiDAR relay as a WebSocket client.
- * args: { url: ws(s)://host:port/ws/lidar, seconds }. The access token comes
+ * args: { url: ws(s)://host:port/ws/lidar, seconds, max_frames }. Returns early
+ * once max_frames arrive or the connection is refused. The access token comes
  * only from RUVIEW_LIDAR_TOKEN (never from tool arguments or logs).
  */
 export function readIphoneLidar(args, deps = {}) {
   const seconds = Math.min(Math.max(args.seconds ?? 5, 1), 60);
+  const maxFrames = Math.min(Math.max(args.max_frames ?? 10_000, 1), 10_000);
   let url;
   try {
     url = new URL(args.url);
@@ -127,7 +129,7 @@ export function readIphoneLidar(args, deps = {}) {
       resolve({
         ok: n > 0 && !extra.reason,
         source: 'iphone', relay: shown, seconds, frames: n, rejectedFrames: rejected,
-        fps: Number((n / seconds).toFixed(2)),
+        fps: Number((n / Math.max((Date.now() - started) / 1000, 0.001)).toFixed(2)),
         ...(n ? { last: frames.at(-1), confidentFractionMean: Number((frames.reduce((a, f) => a + f.confidentFraction, 0) / n).toFixed(3)) } : {}),
         ...(n === 0 && !extra.reason ? (opened
           ? { reason: 'no_frames', detail: lastError, remedy: 'Connected, but the iPhone is not streaming: start capture in the RuView LiDAR app pointed at this relay.' }
@@ -136,6 +138,7 @@ export function readIphoneLidar(args, deps = {}) {
         ...extra,
       });
     };
+    const started = Date.now();
     const timer = setTimeout(() => finish(), seconds * 1000);
     try {
       ws = new WS(url.href);
@@ -149,12 +152,16 @@ export function readIphoneLidar(args, deps = {}) {
         const text = typeof event.data === 'string' ? event.data : Buffer.from(event.data).toString('utf8');
         if (text.length > 4_000_000) throw new Error('frame too large');
         frames.push(depthStats(JSON.parse(text)));
-        if (frames.length > 10_000) frames.shift();
+        if (frames.length >= maxFrames) finish();
       } catch (error) { rejected += 1; lastError = error.message; }
     };
-    ws.onerror = () => { lastError = 'websocket error'; };
+    ws.onerror = () => {
+      lastError = 'websocket error';
+      if (!opened) finish(); // refused before opening: nothing will arrive
+    };
     ws.onclose = (event) => {
-      if (!frames.length && event?.code && event.code !== 1000) finish({ ok: false, reason: 'relay_closed', detail: `close code ${event.code}${event.code === 1008 ? ' (token rejected?)' : ''}` });
+      if (!opened) finish();
+      else if (!frames.length && event?.code && event.code !== 1000) finish({ ok: false, reason: 'relay_closed', detail: `close code ${event.code}${event.code === 1008 ? ' (token rejected?)' : ''}` });
     };
   });
 }
