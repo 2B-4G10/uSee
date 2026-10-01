@@ -51,7 +51,7 @@
     "src/devices/serial-pump.js": "bb1351cd129fd00aa71a5d06104efcff5c0a56f3507e39e1df05395fe7fe7844",
     "src/doctor.js": "f139c2446b469afe6f5b507685836c65ee318c8f16b1ef29819ba828bbf7828f",
     "src/exec.js": "8889d13b8a8277f322856e743c79ac8f29b707251eaf9757c46d3f745743ae22",
-    "src/firmware.js": "436263aac773ae520c6bc456ef19a6f8a80562204ee58f8aacb52574340dadf7",
+    "src/firmware.js": "1af024e8e1cd75d43f9e8ef6ff91d0413cf5f4cd84c368d1407e690b051cac4d",
     "src/guardrails.js": "aacc8fa6088f7f1ccea3a0b02171a5c516b95d3416ee3ba87add3879a1d6aaad",
     "src/guidance.js": "1e0ccee808a736319b3f8257a3fc4fc0f8d9f8956970887d597870bb8d615949",
     "src/hosts/claude-code.js": "2212bc39b49822018800dfe33a471e56bbb4c5233d716bfa7aa4fff77aa23edb",
@@ -70,7 +70,7 @@
     "src/tools.js": "cd72ac87e85e0bfbef7af11c98d03c4cb63a5bdd5da760460e9df8de9468bc34",
     "src/training.js": "b8451c48db69c7d077d75f07500996213beaa52705116f64afafe084e68e3956"
   },
-  "filesDigest": "2135e603f8679941ebb83957fe5de0b0a47239a7d82469128f997d7da8227e15",
+  "filesDigest": "df2350f6a9989615e1978dfc57377edca97e794001ed23a3348ded984441d033",
   "brainDigest": "c0fb7b079ded157059b91601361429944697dae3cc42abc00dfe1a680986b0f4",
   "gateFingerprint": "6e53c784eee38310188948fc75fb49e6b4ebc04e247d01b903fa8c8a92d67bdd",
   "developmentPins": {

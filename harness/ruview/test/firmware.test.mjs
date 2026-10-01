@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildFlashArgs, flashFirmware, parseChip, resolveBundle, summarizeBootLog, validatePort } from '../src/firmware.js';
+import { buildFlashArgs, CAPTURE_SCRIPT, flashFirmware, parseChip, resolveBundle, summarizeBootLog, validatePort } from '../src/firmware.js';
 import { runTool } from '../src/tools.js';
 
 const sha = (b) => createHash('sha256').update(b).digest('hex');
@@ -160,4 +161,25 @@ test('MCP flash requires a hardware-write grant and confirmation; plan is read-o
   assert.equal(plan.reason, 'bundle_missing');
   const injected = await runTool('ruview_firmware_plan', { port: 'COM7', bundle: '/x', confirm: true }, { source: 'mcp', grants: [] });
   assert.equal(injected.reason, 'invalid_arguments', 'plan tool cannot be coerced into a write');
+});
+
+test('boot-log capture survives non-ASCII firmware logs on a cp1252 stdout', (t) => {
+  const py = ['python3', 'python'].find((p) => spawnSync(p, ['--version'], { stdio: 'ignore' }).status === 0);
+  if (!py) { t.skip('python not available'); return; }
+  const fake = mkdtempSync(join(tmpdir(), 'ruview-fakeserial-'));
+  try {
+    // Stand-in pyserial: two lines, the second containing U+2192 (as the C6 firmware logs).
+    writeFileSync(join(fake, 'serial.py'), [
+      'class Serial:',
+      '    def __init__(self, *a, **k): self.lines = [b"I (10) csi_collector: CSI cb #1\\n", "I (11) main: sync \\u2192 leader\\n".encode()]',
+      '    def readline(self): return self.lines.pop(0) if self.lines else b""',
+      '    def close(self): pass',
+    ].join('\n'));
+    const r = spawnSync(py, ['-c', CAPTURE_SCRIPT, 'COM1', '0.5'], { env: { PATH: process.env.PATH, SYSTEMROOT: process.env.SYSTEMROOT || '', PYTHONPATH: fake, PYTHONIOENCODING: 'cp1252' }, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /sync \u2192 leader/);
+    assert.equal(summarizeBootLog(r.stdout).csiCallbacks, 1);
+  } finally {
+    rmSync(fake, { recursive: true, force: true });
+  }
 });

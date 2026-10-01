@@ -164,6 +164,17 @@ napi kernel (integrity verified). The RAC1 decoder is cross-checked against
 the Rust `realtek-csi-sim` encoder (200/200 frames at 8- and 16-bit tones);
 a live RAC1 re-run is pending reconnection of the Realtek board.
 
+Real flash (MEASURED, same C6, COM16): `ruview flash --variant c6 --confirm`
+with the checksum-verified `release_bins/c6-adr110` bundle wrote 4 images
+(hash verified by esptool, NVS kept: node 42 rejoined). The boot log showed
+13 CSI callbacks, the MGMT+DATA upgrade and no panic. After boot, `monitor`
+saw CSI without a reset (uptime 36 s → 62 s) and the UDP capture decoded
+183/183 packets with zero loss. The run exposed one more Windows bug, now
+fixed: the boot-log capture wrote decoded text to a cp1252 stdout (the
+scrubbed child env) and aborted on the firmware's U+2192 log character, so
+`bootLog.captured` was false and an earlier abort would have hidden the CSI
+evidence. It now writes raw bytes; a regression test forces cp1252.
+
 ## Consequences
 
 - One command per modality works across CLI, MCP and SDK, with actionable

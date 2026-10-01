@@ -164,7 +164,9 @@ export const CAPTURE_SCRIPT = [
   'end=time.time()+float(sys.argv[2])',
   'while time.time()<end:',
   ' ln=ser.readline()',
-  ' if ln: sys.stdout.write(ln.decode("utf-8","replace"))',
+  // Raw bytes: the scrubbed child env leaves Windows stdout on cp1252, and
+  // firmware logs contain non-ASCII (e.g. U+2192), which would abort the capture.
+  ' if ln: sys.stdout.buffer.write(ln); sys.stdout.buffer.flush()',
   'ser.close()',
 ].join('\n');
 
