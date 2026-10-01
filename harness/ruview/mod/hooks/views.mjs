@@ -13,20 +13,26 @@ const TABS = [['overview', '1', 'Overview'], ['waterfall', '2', 'CSI waterfall']
 /** Keys of the pictures the hooks module repaints with `$.ui.blit`. */
 export const ANIMATED = Object.freeze(['shimmer', 'waterfall', 'fan', 'pulse']);
 
-/** Picture sizes that fit the pane body. */
-export function sizesOf(columns = 80, rows = 30) {
-  const width = Math.max(24, Math.min(128, columns - 6));
-  const height = Math.max(6, Math.min(26, rows - 12));
+/**
+ * Compact when the pane sits inline above the prompt (a few rows) rather than
+ * docked beside the transcript: no borders, rule or gaps, actions on top.
+ */
+export const compactOf = (opts) => opts.placement === 'inline' || (opts.rows ?? 30) < 18;
+
+/** Picture sizes that fit the pane body (compact: the rows left after the chrome). */
+export function sizesOf(columns = 80, rows = 30, compact = false) {
+  const width = Math.max(24, Math.min(128, columns - (compact ? 2 : 6)));
+  const height = compact ? Math.max(3, Math.min(26, rows - 6)) : Math.max(6, Math.min(26, rows - 12));
   return { width, height };
 }
 
 const wrapIndex = (i, n) => ((i % n) + n) % n;
-const radarLayout = (columns, rows) => {
-  const { width, height } = sizesOf(columns, rows);
-  const wide = (columns ?? 80) >= 110;
+const radarLayout = (columns, rows, compact = false) => {
+  const { width, height } = sizesOf(columns, rows, compact);
+  const wide = compact || (columns ?? 80) >= 110;
   const fanW = wide ? Math.floor(width * 0.55) : width;
   // A 120° wedge is about width / (4·sin 60°) rows tall.
-  const fanH = Math.max(6, Math.min(height, Math.round(fanW / 3.4) + 1));
+  const fanH = Math.max(compact ? 3 : 6, Math.min(height, Math.round(fanW / 3.4) + 1));
   return { width, wide, fanW, fanH, chartW: wide ? Math.max(20, width - fanW - 6) : width };
 };
 
@@ -39,17 +45,18 @@ export function picturesOf(model, opts) {
   const mode = opts.mode || 'overview';
   const t = Number.isFinite(opts.t) ? opts.t : 0;
   const columns = opts.columns ?? 80;
-  const out = { shimmer: { grid: shimmer(Math.max(8, Math.min(160, columns - 4)), t) }, waterfall: null, fan: null, pulse: null };
+  const compact = compactOf(opts);
+  const out = { shimmer: compact ? null : { grid: shimmer(Math.max(8, Math.min(160, columns - 4)), t) }, waterfall: null, fan: null, pulse: null };
   if (!model) return out;
   if (mode === 'waterfall' && model.spectrum?.length) {
     const nodes = model.spectrum;
     const node = nodes[wrapIndex(opts.nodeIndex ?? 0, nodes.length)];
-    const { width, height } = sizesOf(columns, opts.rows);
+    const { width, height } = sizesOf(columns, opts.rows, compact);
     out.waterfall = { ...waterfall(shownFrames(node.frames, opts.lag?.[node.key]), width, height), node, nodes };
   }
   if (mode === 'radar' && model.radar) {
     const history = opts.history || { distance: [] };
-    const { fanW, fanH, chartW } = radarLayout(columns, opts.rows);
+    const { fanW, fanH, chartW } = radarLayout(columns, opts.rows, compact);
     out.fan = radarFan(fanW, fanH, { distances: history.distance, present: model.radar.present, ping: pingOf(t) });
     out.pulse = { grid: pulse(Math.min(chartW, 40), t, { heartBpm: model.radar.heartBpm, breathingBpm: model.radar.breathingBpm }) };
   }
@@ -68,6 +75,8 @@ export function viewOf(ui, model, opts) {
   const t = (children, props = {}) => Text({ wrap: 'truncate-end', ...props, children });
   const row = (children, props = {}) => Box({ flexDirection: 'row', gap: 1, ...props, children: children.filter(Boolean) });
   const pics = ui.Raster ? picturesOf(model, opts) : {};
+  const compact = compactOf(opts);
+  opts = { ...opts, compact };
 
   // Header: freshness badge and age, then the signal rule.
   const finiteAt = model && Number.isFinite(model.at);
@@ -84,13 +93,19 @@ export function viewOf(ui, model, opts) {
   ]);
   const rule = pics.shimmer ? ui.Raster(pics.shimmer.grid.toRaster('shimmer')) : null;
 
-  // Hotkeys reach a Pane only while it holds the keyboard; say how to give it.
-  const tabs = opts.onMode ? row([
-    ...TABS.map(([m, key, label]) => Button({
+  // Views and actions share the top row, so they stay visible however short
+  // the pane is. Hotkeys reach a Pane only while it holds the keyboard; say so.
+  const actions = row([
+    ...(opts.onMode ? TABS.map(([m, key, label]) => Button({
       key: `tab-${m}`, hotkey: key, label: `${m === mode ? '▸ ' : ''}${label} (${key})`, onPress: () => opts.onMode(m),
-    })),
-    opts.focused === false ? t('click the pane or press ctrl+x tab to use the keys', { dimColor: true, italic: true }) : null,
-  ], { gap: 2 }) : null;
+    })) : []),
+    Button({ key: 'refresh', label: opts.busy ? 'Refreshing…' : 'Refresh (r)', hotkey: 'r', onPress: opts.onRefresh }),
+    mode === 'waterfall' && opts.onNextNode && (model?.spectrum?.length ?? 0) > 1 ? Button({ key: 'next-node', label: 'Next node (n)', hotkey: 'n', onPress: opts.onNextNode }) : null,
+    Button({ key: 'close', label: 'Close (c)', hotkey: 'c', onPress: opts.onClose }),
+    opts.focused
+      ? t('keys active · Esc returns them', { color: 'green', dimColor: true })
+      : t('click the pane or press ctrl+x tab to use the keys', { dimColor: true, italic: true }),
+  ], { gap: compact ? 1 : 2 });
 
   const alerts = (model?.alerts || []).map((a) => Text({ color: a.level === 'bad' ? 'red' : 'yellow', wrap: 'wrap', children: `! ${a.text}` }));
 
@@ -99,19 +114,17 @@ export function viewOf(ui, model, opts) {
   else if (mode === 'radar') body = radarView(ui, model, opts, pics, t, row);
   else body = overview(ui, model, opts, t, row);
 
-  const footer = row([
-    Button({ key: 'refresh', label: opts.busy ? 'Refreshing…' : 'Refresh (r)', hotkey: 'r', onPress: opts.onRefresh }),
-    mode === 'waterfall' && opts.onNextNode && (model?.spectrum?.length ?? 0) > 1 ? Button({ key: 'next-node', label: 'Next node (n)', hotkey: 'n', onPress: opts.onNextNode }) : null,
-    Button({ key: 'close', label: 'Close (c)', hotkey: 'c', onPress: opts.onClose }),
-  ], { gap: 2 });
-
-  return Box({ flexDirection: 'column', gap: 1, paddingX: 1, children: [Box({ flexDirection: 'column', children: [header, rule].filter(Boolean) }), tabs, ...alerts, body, footer].filter(Boolean) });
+  return Box({
+    flexDirection: 'column', gap: compact ? 0 : 1, paddingX: compact ? 0 : 1,
+    children: [Box({ flexDirection: 'column', children: [header, rule].filter(Boolean) }), actions, ...alerts, body].filter(Boolean),
+  });
 }
 
-function card(ui, title, subtitle, borderColor, children, t, row) {
+function card(ui, title, subtitle, borderColor, children, t, row, compact = false) {
   return ui.Box({
-    flexDirection: 'column', borderStyle: 'round', borderColor, paddingX: 1, flexGrow: 1,
-    children: [row([t(title, { bold: true }), subtitle ? t(subtitle, { dimColor: true }) : null]), ...children.filter(Boolean)],
+    flexDirection: 'column', flexGrow: 1,
+    ...(compact ? {} : { borderStyle: 'round', borderColor, paddingX: 1 }),
+    children: [row([t(title, { bold: true, color: compact ? borderColor : undefined }), subtitle ? t(subtitle, { dimColor: true }) : null]), ...children.filter(Boolean)],
   });
 }
 
@@ -137,18 +150,18 @@ function overview(ui, model, opts, t, row) {
     const presence = r.present == null ? t('? presence unknown', { dimColor: true })
       : r.present ? t(`● PRESENCE DETECTED${r.targets ? ` · ${r.targets} target${r.targets === 1 ? '' : 's'}` : ''}`, { color: 'green', bold: true })
         : t('○ no presence', { dimColor: true });
-    radarCard = card(ui, '60 GHz RADAR', r.name, r.present ? 'green' : 'gray', [
+    radarCard = card(ui, '60 GHz RADAR', opts.compact ? `${r.name} · device-reported, not validated` : r.name, r.present ? 'green' : 'gray', [
       presence,
       vital('distance', r.distance, r.distanceCm, null, history.distance),
       vital('heart', r.heart, r.heartBpm, 'heart', history.heart),
       vital('breathing', r.breathing, r.breathingBpm, 'breathing', history.breathing),
-      t('device-reported values, not validated against a reference', { dimColor: true, italic: true }),
-    ], t, row);
+      opts.compact ? null : t('device-reported values, not validated against a reference', { dimColor: true, italic: true }),
+    ], t, row, opts.compact);
   } else if (!opts.radarConfigured) {
     radarCard = card(ui, '60 GHz RADAR', 'not configured', 'gray', [
       t('Set radarHost to an ESPHome radar kit:', { dimColor: true }),
       t('claude plugin configure ruview-live', { color: 'cyan' }),
-    ], t, row);
+    ], t, row, opts.compact);
   }
   const lines = model.nodes.length
     ? model.nodes.map((n) => row([
@@ -166,8 +179,8 @@ function overview(ui, model, opts, t, row) {
     ];
   const nodesCard = card(ui, 'CSI NODES', `UDP ${opts.udpPort ?? 5005} · ${model.decoded}/${model.packets} decoded`, model.nodes.length ? 'cyan' : 'gray', [
     ...lines,
-    model.nodes.length ? t('press 2 for the live CSI waterfall', { dimColor: true, italic: true }) : null,
-  ], t, row);
+    model.nodes.length && !opts.compact ? t('press 2 for the live CSI waterfall', { dimColor: true, italic: true }) : null,
+  ], t, row, opts.compact);
   const cards = [radarCard, nodesCard].filter(Boolean);
   return ui.Box({ flexDirection: (opts.columns ?? 80) >= 100 ? 'row' : 'column', gap: 1, children: cards });
 }
@@ -180,16 +193,16 @@ function waterfallView(ui, model, opts, pics, t, row) {
     return card(ui, 'CSI WATERFALL', 'no CSI frames', 'gray', [
       t('No CSI node is streaming to this machine, so there is nothing to draw.', { dimColor: true }),
       t(`Point a node at this host's UDP ${opts.udpPort ?? 5005} (provision.py --target-ip), then this view fills by itself.`, { dimColor: true }),
-    ], t, row);
+    ], t, row, opts.compact);
   }
   const { grid, lo, hi, node: n, nodes } = pics.waterfall;
   const legend = colourbar(Math.min(32, grid.columns - 20));
   return card(ui, 'CSI WATERFALL', `${n.label} · ${n.subcarriers} subcarriers → ${n.bins} bins · ${n.rateHz ?? '—'} Hz${nodes.length > 1 ? ` · node ${nodes.indexOf(n) + 1}/${nodes.length}` : ''}`, n.synthetic ? 'yellow' : 'cyan', [
     n.synthetic ? t('SYNTHETIC — simulator frames, not a live measurement', { color: 'yellow', bold: true }) : t('MEASURED — live CSI amplitude received on this host', { color: 'green' }),
     ui.Raster(grid.toRaster('waterfall')),
-    row([t('subcarrier →', { dimColor: true }), t('newest at the bottom · replayed at the arrival rate', { dimColor: true })], { justifyContent: 'space-between' }),
+    opts.compact ? null : row([t('subcarrier →', { dimColor: true }), t('newest at the bottom · replayed at the arrival rate', { dimColor: true })], { justifyContent: 'space-between' }),
     row([t(lo.toFixed(0), { dimColor: true }), ui.Raster(legend.toRaster('legend')), t(`${hi.toFixed(0)} amplitude (5th–95th pct)`, { dimColor: true })]),
-  ], t, row);
+  ], t, row, opts.compact);
 }
 
 function radarView(ui, model, opts, pics, t, row) {
@@ -197,10 +210,10 @@ function radarView(ui, model, opts, pics, t, row) {
   if (note) return note;
   if (!model) return t('waiting for the first capture…', { dimColor: true });
   if (!opts.radarConfigured) {
-    return card(ui, 'RADAR', 'not configured', 'gray', [t('Set radarHost: claude plugin configure ruview-live', { color: 'cyan' })], t, row);
+    return card(ui, 'RADAR', 'not configured', 'gray', [t('Set radarHost: claude plugin configure ruview-live', { color: 'cyan' })], t, row, opts.compact);
   }
   const r = model.radar;
-  if (!r || !pics.fan) return card(ui, '60 GHz RADAR', 'unreachable', 'red', [t('No reading this refresh; see the alert above.', { dimColor: true })], t, row);
+  if (!r || !pics.fan) return card(ui, '60 GHz RADAR', 'unreachable', 'red', [t('No reading this refresh; see the alert above.', { dimColor: true })], t, row, opts.compact);
   const history = opts.history || { heart: [], breathing: [], distance: [] };
   const { wide, chartW } = radarLayout(opts.columns, opts.rows);
   const presence = r.present ? t(`● PRESENCE DETECTED · ${r.distance}${r.targets ? ` · ${r.targets} target${r.targets === 1 ? '' : 's'}` : ''}`, { color: 'green', bold: true })
@@ -209,7 +222,7 @@ function radarView(ui, model, opts, pics, t, row) {
     presence,
     ui.Raster(pics.fan.grid.toRaster('fan')),
     t('range only: this kit reports distance, not bearing (arc = every bearing at that range)', { dimColor: true, italic: true }),
-  ], t, row);
+  ], t, row, opts.compact);
   const chart = (label, series, kind, unit, colour, minSpan) => {
     const { grid: g, lo, hi } = lineChart(series, chartW, 3, { band: kind ? RANGES[kind] : null, colour, minSpan });
     const last = [...series].reverse().find((v) => Number.isFinite(v));
@@ -219,6 +232,20 @@ function radarView(ui, model, opts, pics, t, row) {
       ui.Raster(g.toRaster(`chart-${label}`)),
     ];
   };
+  if (opts.compact) {
+    // Inline: the fan beside the readings and the pulse; charts need the dock.
+    const line = (label, value, raw, kind) => {
+      const warn = kind ? plausibilityOf(kind, raw) : null;
+      return row([t(label.padEnd(10), { dimColor: true }), t(value, { bold: true, color: warn ? 'yellow' : undefined }), warn ? t(`⚠ ${warn}`, { color: 'yellow' }) : null]);
+    };
+    const readings = card(ui, 'VITALS', 'device-reported, not validated', 'gray', [
+      pics.pulse ? ui.Raster(pics.pulse.grid.toRaster('pulse')) : null,
+      line('distance', r.distance, r.distanceCm, null),
+      line('heart', r.heart, r.heartBpm, 'heart'),
+      line('breathing', r.breathing, r.breathingBpm, 'breathing'),
+    ], t, row, true);
+    return ui.Box({ flexDirection: 'row', gap: 2, children: [fan, readings] });
+  }
   const charts = card(ui, 'VITALS', 'device-reported, not validated', 'gray', [
     pics.pulse ? ui.Raster(pics.pulse.grid.toRaster('pulse')) : null,
     pics.pulse ? t('♥ beats and the gauge breathes at the reported rates (a metronome, not a waveform)', { dimColor: true, italic: true }) : null,
@@ -226,6 +253,6 @@ function radarView(ui, model, opts, pics, t, row) {
     ...chart('breathing', history.breathing, 'breathing', 'bpm', rgb(110, 200, 255), 4),
     ...chart('distance', history.distance, null, 'cm', rgb(120, 255, 170), 20),
     t('shaded = inside the plausible resting range', { dimColor: true, italic: true }),
-  ], t, row);
+  ], t, row, opts.compact);
   return ui.Box({ flexDirection: wide ? 'row' : 'column', gap: 1, children: [fan, charts] });
 }

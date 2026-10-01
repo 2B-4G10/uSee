@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ANIMATED, Braille, colormap, commandsOf, DEFAULT, drain, Grid, lineChart, modelOf, phaseOf, picturesOf, pingOf, pulse,
+  ANIMATED, Braille, colormap, compactOf, commandsOf, DEFAULT, drain, Grid, lineChart, modelOf, phaseOf, picturesOf, pingOf, pulse,
   radarFan, rgb, settingsOf, shimmer, shownFrames, spectrumOf, spectrumWith, toBase64, viewOf, waterfall,
 } from '../mod/hooks/register.mjs';
 
@@ -166,4 +166,21 @@ test('an unfocused pane says how to give it the keys; a focused one does not', (
   const model = modelOf(spectrumCapture(false), null, 0);
   assert.match(JSON.stringify(viewOf(UI, model, { ...base, focused: false })), /ctrl\+x tab to use the keys/);
   assert.doesNotMatch(JSON.stringify(viewOf(UI, model, { ...base, focused: true })), /ctrl\+x tab/);
+});
+
+test('inline panes are compact: actions on top, no borders, pictures sized to the rows', () => {
+  assert.equal(compactOf({ placement: 'inline', rows: 30 }), true);
+  assert.equal(compactOf({ placement: 'dock', rows: 34 }), false);
+  assert.equal(compactOf({ rows: 8 }), true, 'a short dock is compact too');
+  const base = { refreshMs: 15000, liveRefreshMs: 4000, columns: 135, rows: 8, placement: 'inline', radarConfigured: true,
+    history: { heart: [70, 72], breathing: [14, 15], distance: [110, 120], rates: {} }, onMode() {}, onRefresh() {}, onClose() {} };
+  for (const mode of ['overview', 'waterfall', 'radar']) {
+    const tree = viewOf(UI, modelOf(spectrumCapture(false), radar, 0), { ...base, mode });
+    const nodes = flat(tree);
+    assert.ok(!nodes.some((n) => n.props?.borderStyle), `${mode}: no borders inline`);
+    assert.ok(!nodes.some((n) => n.type === 'Raster' && n.props.key === 'shimmer'), `${mode}: no decorative rule inline`);
+    const actions = tree.props.children[1];
+    assert.deepEqual(flat(actions).filter((n) => n.type === 'Button').map((b) => b.props.hotkey).slice(-2), ['r', 'c'], `${mode}: refresh and close on the top row`);
+    for (const r of nodes.filter((n) => n.type === 'Raster')) assert.ok(r.props.rows <= 3, `${mode}/${r.props.key}: ${r.props.rows} rows fits an 8-row pane`);
+  }
 });
