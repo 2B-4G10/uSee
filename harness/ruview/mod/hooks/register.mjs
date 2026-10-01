@@ -20,6 +20,17 @@ export { ANIMATED, picturesOf, sizesOf, viewOf } from './views.mjs';
 export const PANE_ID = 'ruview-live';
 export const COMMAND = 'ruview';
 const TICK_MS = 5000;
+/** Body rows each view asks for when the pane sits inline above the prompt. */
+export const VIEW_ROWS = Object.freeze({ overview: 16, waterfall: 30, radar: 26 });
+
+/**
+ * The open request: a dialog (focus + closeOnEscape + holdToasts) takes the
+ * keyboard, so the view keys work at once; `rows` sizes the inline pane to
+ * the view instead of a third of the screen (the dock ignores it).
+ */
+export const openArgsOf = (mode) => ({
+  id: PANE_ID, title: 'RuView', focus: true, closeOnEscape: true, holdToasts: true, rows: VIEW_ROWS[mode] ?? VIEW_ROWS.overview,
+});
 /** Animation frame period: ~12 fps, well inside blit's 60 shown a second. */
 export const FRAME_MS = 80;
 
@@ -138,15 +149,17 @@ export function register(on, options = {}) {
   function setMode(next) {
     if (!MODES.includes(next) || next === mode) return;
     mode = next;
-    if (isOpen && host) { stop(); startPolling(); } else host?.invalidate();
+    if (isOpen && host) {
+      // Each open sets the size anew: re-request rows for this view, keeping the keys.
+      void host.open(openArgsOf(mode)).catch(() => undefined);
+      stop();
+      startPolling();
+    } else host?.invalidate();
   }
 
   async function open(initialMode) {
     if (MODES.includes(initialMode)) mode = initialMode;
-    // Ask for the keyboard so the view keys (1/2/3, r, c) work at once; the
-    // surface grants it only over an empty prompt. No closeOnEscape: Escape
-    // hands the keys back without closing the pane.
-    await host.open({ id: PANE_ID, title: 'RuView', focus: true });
+    await host.open(openArgsOf(mode));
     stop();
     startPolling();
   }
@@ -180,8 +193,8 @@ export function register(on, options = {}) {
     if (arg === 'refresh') { await refresh(); return { text: statusOf(model) }; }
     if (MODES.includes(arg)) {
       if (isOpen) {
-        setMode(arg);
-        await host.open({ id: PANE_ID, title: 'RuView', focus: true }).catch(() => undefined);
+        if (arg === mode) await host.open(openArgsOf(mode)).catch(() => undefined);
+        else setMode(arg);
       } else await open(arg);
       return { text: `RuView pane: ${arg} view.` };
     }

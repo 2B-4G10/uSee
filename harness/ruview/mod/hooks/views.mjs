@@ -16,7 +16,7 @@ export const ANIMATED = Object.freeze(['shimmer', 'waterfall', 'fan', 'pulse']);
 /** Picture sizes that fit the pane body. */
 export function sizesOf(columns = 80, rows = 30) {
   const width = Math.max(24, Math.min(128, columns - 6));
-  const height = Math.max(6, Math.min(26, rows - 12));
+  const height = Math.max(6, Math.min(26, rows - 15)); // the header, tabs, card chrome and footer take ~15 rows
   return { width, height };
 }
 

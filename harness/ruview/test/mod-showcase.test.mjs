@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ANIMATED, Braille, colormap, commandsOf, DEFAULT, drain, Grid, lineChart, modelOf, phaseOf, picturesOf, pingOf, pulse,
+  ANIMATED, Braille, colormap, openArgsOf, VIEW_ROWS, commandsOf, DEFAULT, drain, Grid, lineChart, modelOf, phaseOf, picturesOf, pingOf, pulse,
   radarFan, rgb, settingsOf, shimmer, shownFrames, spectrumOf, spectrumWith, toBase64, viewOf, waterfall,
 } from '../mod/hooks/register.mjs';
 
@@ -150,7 +150,7 @@ test('radar view: fan, pulse and charts, with the honesty labels', () => {
 });
 
 test('spectrum requests, merging across captures, and live commands', () => {
-  assert.deepEqual(spectrumOf(120, 34), { bins: 114, frames: 44 });
+  assert.deepEqual(spectrumOf(120, 34), { bins: 114, frames: 38 });
   assert.deepEqual(spectrumOf(10, 5), { bins: 24, frames: 12 });
   const c = commandsOf(settingsOf({ radarHost: 'kit.local' }), { live: true, spectrum: { bins: 64, frames: 48 } });
   assert.deepEqual(c.capture, ['esp32', '--seconds', '2', '--udp-port', '5005', '--json', '--spectrum', '--spectrum-bins', '64', '--spectrum-frames', '48']);
@@ -166,4 +166,13 @@ test('an unfocused pane says how to give it the keys; a focused one does not', (
   const model = modelOf(spectrumCapture(false), null, 0);
   assert.match(JSON.stringify(viewOf(UI, model, { ...base, focused: false })), /ctrl\+x tab to use the keys/);
   assert.doesNotMatch(JSON.stringify(viewOf(UI, model, { ...base, focused: true })), /ctrl\+x tab/);
+});
+
+test('the pane opens as a dialog that takes the keys, sized to the view', () => {
+  for (const mode of ['overview', 'waterfall', 'radar']) {
+    const a = openArgsOf(mode);
+    assert.deepEqual([a.id, a.focus, a.closeOnEscape, a.holdToasts], ['ruview-live', true, true, true], 'focus + closeOnEscape + holdToasts = a dialog that takes the keys');
+    assert.equal(a.rows, VIEW_ROWS[mode]);
+  }
+  assert.ok(VIEW_ROWS.waterfall > VIEW_ROWS.overview, 'the live views ask for more room');
 });
