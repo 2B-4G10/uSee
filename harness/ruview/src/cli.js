@@ -40,8 +40,8 @@ const VERB_TO_TOOL = {
 
 // Verbs whose kebab-case flags map 1:1 onto snake_case schema fields (ADR-369).
 const SNAKE_VERBS = new Set(['flash', 'flash-plan', 'train', 'train-plan', 'train-gate', 'devices', 'esp32', 'mmwave', 'lidar']);
-const NUMERIC_FLAGS = new Set(['baud', 'boot_log_seconds', 'samples', 'model_score', 'baseline_score', 'n_test', 'seconds', 'udp_port', 'max_packets', 'max_frames', 'node_id', 'analyze_max_frames', 'api_port']);
-const BOOLEAN_FLAGS = new Set(['confirm', 'cuda', 'allow_unverified', 'analyze']);
+const NUMERIC_FLAGS = new Set(['baud', 'boot_log_seconds', 'samples', 'model_score', 'baseline_score', 'n_test', 'seconds', 'udp_port', 'max_packets', 'max_frames', 'node_id', 'analyze_max_frames', 'api_port', 'spectrum_bins', 'spectrum_frames']);
+const BOOLEAN_FLAGS = new Set(['confirm', 'cuda', 'allow_unverified', 'analyze', 'spectrum']);
 // Presentation-only flags never reach a tool schema.
 const UI_FLAGS = new Set(['json', 'watch', 'interval']);
 

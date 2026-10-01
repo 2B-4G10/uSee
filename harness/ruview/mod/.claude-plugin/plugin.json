@@ -1,7 +1,7 @@
 {
   "name": "ruview-live",
   "version": "0.1.0",
-  "description": "RuView live sensing in Claude Code: /ruview opens a pane beside the transcript with your CSI nodes (ESP32, Realtek) and 60 GHz radar (raw or ESPHome kits): rates, loss, RSSI, presence, device-reported vitals and alerts such as heartbeat-only boards, refreshed on a timer, plus a one-line status. Reads only; runs the @ruvnet/ruview CLI it ships beside.",
+  "description": "RuView live sensing in Claude Code: /ruview opens a pane beside the transcript with three views: an overview of your CSI nodes (ESP32, Realtek) and 60 GHz radar (rates, loss, RSSI, presence, device-reported vitals, alerts), a live CSI amplitude waterfall, and a radar range fan with vitals charts, all drawn in terminal cells. Reads only; runs the @ruvnet/ruview CLI it ships beside.",
   "author": {
     "name": "ruvnet",
     "url": "https://github.com/ruvnet/RuView"
@@ -32,6 +32,12 @@
       "title": "Capture window (s)",
       "description": "Seconds each refresh listens for node packets and radar states (1-10).",
       "default": 3
+    },
+    "liveRefreshSeconds": {
+      "type": "number",
+      "title": "Live view refresh (s)",
+      "description": "Seconds between refreshes in the waterfall and radar views (2-60).",
+      "default": 4
     }
   }
 }

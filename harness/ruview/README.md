@@ -251,6 +251,16 @@ This package ships **`ruview-live`**, a Claude Code mod: a plugin whose behaviou
 
 It also keeps a one-line status: `RuView · 2 nodes · radar present · 1 alert`.
 
+**Showcase views (ADR-378).** The pane has three views, switched with keys `1`, `2` and `3`. The two live views are drawn in terminal cells (24-bit colour) and animated in place:
+
+| Key | View | What you see |
+|---|---|---|
+| `1` | Overview | the cards above |
+| `2` | CSI waterfall | per-subcarrier amplitude over time (`esp32 --spectrum`), replayed at the frames' arrival rate and labelled **MEASURED** or **SYNTHETIC** from the packets' own flag; `n` cycles nodes |
+| `3` | Radar | a 120° range fan with a sonar ping out to the measured distance; heart and breathing charts, and a ♥ and breathing gauge that pulse at the device-reported rates (a metronome, not a waveform) |
+
+The radar kit reports range, not bearing, so the arc covers every bearing at that range. Desktop and IDE surfaces show the overview, and a note in the live views.
+
 ```bash
 npx @ruvnet/ruview mod                    # where the mod is in this install, and how to load it
 claude --plugin-dir "<path printed above>"   # try it for one session
@@ -266,11 +276,13 @@ In Claude Code:
 | `/ruview` | Open or close the pane |
 | `/ruview refresh` | Run one capture now; the result goes in the status line |
 | `/ruview off` | Close the pane |
+| `/ruview waterfall`, `/ruview radar` | Open the pane on that view |
 
 **Settings** (`claude plugin configure ruview-live`):
 - `udpPort` (default 5005);
 - `radarHost`, an ESPHome kit on your private network;
 - `refreshSeconds` (default 15, minimum 5);
+- `liveRefreshSeconds` for the waterfall and radar views (default 4, range 2–60);
 - `captureSeconds` (default 3).
 
 **How it reads:**

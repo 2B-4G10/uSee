@@ -514,6 +514,9 @@ export const TOOLS = {
         node_id: { type: 'number', minimum: 0, maximum: 255, description: 'Node to analyze. Default: the node with the most CSI frames.' },
         backend: { type: 'string', enum: [...KERNEL_BACKENDS], description: 'Kernel backend for analyze. Default wasm.' },
         analyze_max_frames: { type: 'number', minimum: 64, maximum: 20000, description: 'Frame cap for analyze. Default 6000.' },
+        spectrum: { type: 'boolean', description: 'Also return the newest per-node amplitude frames, binned, for a waterfall view (ADR-378).' },
+        spectrum_bins: { type: 'number', minimum: 8, maximum: 128, description: 'Subcarrier bins per frame. Default 48.' },
+        spectrum_frames: { type: 'number', minimum: 8, maximum: 256, description: 'Newest frames kept per node. Default 64.' },
       },
     },
     handler(args = {}) {

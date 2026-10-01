@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ageOf, cliPathOf, commandsOf, historyWith, modelOf, plausibilityOf, resultOf, settingsOf, sparkline, statusOf, viewOf } from '../mod/hooks/register.mjs';
+import { ageOf, cliPathOf, commandsOf, HISTORY, historyWith, modelOf, plausibilityOf, resultOf, settingsOf, sparkline, statusOf, viewOf } from '../mod/hooks/register.mjs';
 
 const capture = {
   ok: true, packets: 120, decodedPackets: 118,
@@ -16,9 +16,9 @@ const capture = {
 const radar = { ok: true, host: '192.168.1.102', device: { name: 'mr60-kit' }, presentNow: true, distanceCmMean: 40.2, heartBpmMean: 75.3, breathingBpmMean: 10.7 };
 
 test('settings are bounded and radar hosts are validated', () => {
-  assert.deepEqual(settingsOf({}), { udpPort: 5005, radarHost: '', refreshMs: 15000, captureSeconds: 3 });
-  const s = settingsOf({ udpPort: 80, radarHost: ' 192.168.1.102 ', refreshSeconds: 1, captureSeconds: 99 });
-  assert.deepEqual(s, { udpPort: 1024, radarHost: '192.168.1.102', refreshMs: 5000, captureSeconds: 10 });
+  assert.deepEqual(settingsOf({}), { udpPort: 5005, radarHost: '', refreshMs: 15000, captureSeconds: 3, liveRefreshMs: 4000 });
+  const s = settingsOf({ udpPort: 80, radarHost: ' 192.168.1.102 ', refreshSeconds: 1, captureSeconds: 99, liveRefreshSeconds: 0 });
+  assert.deepEqual(s, { udpPort: 1024, radarHost: '192.168.1.102', refreshMs: 5000, captureSeconds: 10, liveRefreshMs: 2000 });
   assert.equal(settingsOf({ radarHost: 'evil host; rm -rf /' }).radarHost, '');
 });
 
@@ -101,10 +101,10 @@ test('sparklines, plausibility, ages and history are bounded and honest', () => 
   assert.equal(ageOf(185_000), '3m ago');
   assert.equal(ageOf(NaN), '');
   let h = null;
-  for (let i = 0; i < 30; i++) h = historyWith(h, modelOf(capture, { ...radar, heartBpmMean: 70 + i }, i));
-  assert.equal(h.heart.length, 24, 'history is bounded');
-  assert.equal(h.heart.at(-1), 99);
-  assert.equal(h.rates['realtek:3'].length, 24);
+  for (let i = 0; i < HISTORY + 6; i++) h = historyWith(h, modelOf(capture, { ...radar, heartBpmMean: 70 + i }, i));
+  assert.equal(h.heart.length, HISTORY, 'history is bounded');
+  assert.equal(h.heart.at(-1), 70 + HISTORY + 5);
+  assert.equal(h.rates['realtek:3'].length, HISTORY);
 });
 
 test('the redesigned pane: badge, cards side by side when wide, flags implausible vitals', () => {
@@ -147,6 +147,12 @@ test('the mod manifest and hooks module are a valid plugin shape', () => {
   const hooks = JSON.parse(readFileSync(new URL('../mod/hooks/hooks.json', import.meta.url), 'utf8'));
   assert.equal(plugin.name, 'ruview-live');
   assert.deepEqual(hooks.modules, ['./register.mjs']);
-  const src = readFileSync(new URL('../mod/hooks/register.mjs', import.meta.url), 'utf8');
-  assert.doesNotMatch(src, /^\s*import\s/m, 'a mod imports nothing but its own files');
+  for (const file of ['register.mjs', 'model.mjs', 'views.mjs', 'raster.mjs', 'anim.mjs']) {
+    const src = readFileSync(new URL(`../mod/hooks/${file}`, import.meta.url), 'utf8');
+    for (const [, from] of src.matchAll(/^\s*(?:import|export)\s[^;]*?from\s+'([^']+)'/gm)) {
+      assert.match(from, /^\.\/[a-z]+\.mjs$/, `${file}: a mod imports nothing but its own files (${from})`);
+    }
+    assert.doesNotMatch(src, /\bimport\(/, `${file}: no dynamic import`);
+  }
+  assert.ok(plugin.userConfig.liveRefreshSeconds, 'the live views have their own refresh option');
 });

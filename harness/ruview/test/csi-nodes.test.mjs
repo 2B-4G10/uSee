@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import dgram from 'node:dgram';
-import { captureEsp32, crc32, parsePacket, RAC1_MAGIC, RHB1_MAGIC } from '../src/devices/esp32.js';
+import { binAmplitudes, captureEsp32, crc32, parsePacket, RAC1_MAGIC, RHB1_MAGIC, SpectrumCollector } from '../src/devices/esp32.js';
 import { classifyPort } from '../src/devices/registry.js';
 import { kernelAnalyzer } from '../src/kernel.js';
 import { runTool, TOOLS } from '../src/tools.js';
@@ -207,4 +207,25 @@ test('tool schemas accept the new arguments and reject bad ones', async () => {
   assert.notDeepEqual(validateArguments(mon, { port: 'COM10', baud: 9600 }), []);
   const denied = await runTool('ruview_esp32_capture', { analyze: true }, { source: 'mcp', grants: [] });
   assert.equal(denied.reason, 'authority_denied');
+});
+
+test('spectrum: binned amplitude frames per node for the waterfall (ADR-378)', async () => {
+  assert.deepEqual(binAmplitudes([1, 2, 3, 4, 5, 6], 3), [1.5, 3.5, 5.5]);
+  assert.deepEqual(binAmplitudes([1, 2], 8), [1, 2], 'never more bins than subcarriers');
+  const ring = new SpectrumCollector(3, 2);
+  for (let k = 0; k < 5; k++) ring.add({ kind: 'csi', source: 'esp32', nodeId: 1, subcarriers: 4, amplitudes: [k, k, k, k] }, k * 100);
+  ring.add({ kind: 'heartbeat' }, 0);
+  const [r] = ring.result();
+  assert.deepEqual(r.frames.map((f) => f[0]), [2, 3, 4], 'keeps the newest frames');
+  assert.deepEqual([r.framesSeen, r.rateHz, r.bins, r.synthetic], [5, 10, 2, false]);
+  const res = await capture({ spectrum: true, spectrum_bins: 16, spectrum_frames: 8 }, Array.from({ length: 12 }, (_, seq) => esp32Csi({ seq })));
+  assert.equal(res.ok, true);
+  const [s] = res.spectrum;
+  assert.deepEqual([s.source, s.nodeId, s.subcarriers, s.bins, s.frames.length], ['esp32', 42, 64, 16, 8]);
+  assert.ok(s.frames.every((f) => f.every((v) => v === 5)), 'amplitude |(0,5)| = 5');
+  const plain = await capture({}, [esp32Csi()]);
+  assert.equal(plain.spectrum, undefined, 'only when asked');
+  const tool = TOOLS.ruview_esp32_capture.inputSchema;
+  assert.deepEqual(validateArguments(tool, { spectrum: true, spectrum_bins: 48, spectrum_frames: 64 }), []);
+  assert.notDeepEqual(validateArguments(tool, { spectrum_bins: 4 }), []);
 });

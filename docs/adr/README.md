@@ -2,6 +2,7 @@
 
 Latest proposed decisions:
 
+- [ADR-378: `ruview-live` showcase views — CSI waterfall, radar fan, animated cells](ADR-378-ruview-live-showcase-views.md)
 - [ADR-377: `ruview-live` — a Claude Code mod shipped inside `@ruvnet/ruview`](ADR-377-ruview-live-claude-code-mod.md)
 - [ADR-376: `ruview` — one npm install for every RuView component](ADR-376-ruview-umbrella-npm-package.md)
 - [ADR-375: MCP Apps console, HTTP transport and terminal UI for `@ruvnet/ruview`](ADR-375-ruview-mcp-apps-console-http-transport-and-terminal-ui.md)

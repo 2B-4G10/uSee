@@ -59,7 +59,7 @@ describe('register', () => {
 
     const beforeTicks = runs.length
     for (let i = 0; i < 3; i++) {
-      clock.advance(15_000)
+      await clock.advance(15_000)
       await settle()
     }
     expect(runs.length).toBeGreaterThan(beforeTicks)
@@ -69,7 +69,7 @@ describe('register', () => {
     expect(closed).toEqual(['ruview-live'])
     const afterClose = runs.length
     for (let i = 0; i < 4; i++) {
-      clock.advance(15_000)
+      await clock.advance(15_000)
       await settle()
     }
     expect(runs.length).toBe(afterClose)
@@ -89,6 +89,7 @@ describe('register', () => {
     })
     on('ui.status', () => ({ value: undefined }))
     on('ui.invalidate', () => ({ value: undefined }))
+    on('ui.blit', () => ({ value: {} }))
     const PANE = {
       title: 'RuView',
       isFocused: false,
@@ -109,10 +110,58 @@ describe('register', () => {
     expect(await again.find({ type: 'Text', text: /NODES/ })).toBeDefined()
     expect(await again.find({ type: 'Text', text: /waiting for the first capture/ })).toBeUndefined()
     const polled = runs.length
-    clock.advance(15_000)
-    for (let i = 0; i < 5; i++) await clock.settle()
+    // Step time as a live session does (the animation timer runs every 80 ms).
+    for (let s = 0; s < 16; s++) {
+      await clock.advance(1_000)
+      for (let i = 0; i < 5; i++) await clock.settle()
+    }
     expect(runs.length).toBeGreaterThan(polled)
     await again.unmount()
+  })
+
+  test('the waterfall tab asks for spectrum frames, draws a Raster, and animates it with blits', async ($, on) => {
+    const runs: (readonly string[])[] = []
+    const blits: string[] = []
+    const clock = mock.clock(on)
+    const frames = Array.from({ length: 40 }, (_, k) => [k, 2 * k, 3 * k, 4 * k])
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('command.register', ($, e) => ({ value: { command: e.name } }))
+    on('process.run', ($, e) => {
+      runs.push(e.argv)
+      const spectrum = e.argv.includes('--spectrum')
+        ? [{ source: 'esp32', nodeId: 42, subcarriers: 64, bins: 4, rateHz: 20, synthetic: false, frames }]
+        : undefined
+      return { value: { exitCode: 0, stdout: JSON.stringify({ ...CAPTURE, spectrum }), stderr: '' } }
+    })
+    on('ui.status', () => ({ value: undefined }))
+    // No ui.invalidate stub here: the mounted drawing follows the mod's invalidations.
+    on('ui.blit', ($, e) => {
+      blits.push(e.key)
+      return { value: {} }
+    })
+    const PANE = { title: 'RuView', isFocused: true, bodyColumns: 120, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 34 }, view: {} }
+    const settle = async () => {
+      for (let i = 0; i < 5; i++) await clock.settle()
+    }
+
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+    const pane = await $.ui.mount({ plugin: 'ruview-live', surface: 'terminal', component: 'Pane', requestId: 'ruview-live', props: PANE })
+    await settle()
+    expect(await pane.find({ key: 'tab-waterfall' })).toBeDefined()
+    await pane.press({ key: 'tab-waterfall' })
+    await settle()
+    expect(runs.at(-1)).toContain('--spectrum')
+    expect(runs.at(-1)).toContain('--spectrum-bins')
+
+    expect(await pane.find({ type: 'Text', text: /MEASURED/ })).toBeDefined()
+    expect(await pane.find({ type: 'Raster', key: 'waterfall' })).toBeDefined()
+    for (let i = 0; i < 4; i++) {
+      await clock.advance(100)
+      await settle()
+    }
+    expect(blits).toContain('waterfall')
+    expect(blits).toContain('shimmer')
+    await pane.unmount()
   })
 
   test('/ruview refresh with no nodes reports the honest failure in the status', async ($, on) => {

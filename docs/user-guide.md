@@ -1066,6 +1066,16 @@ beside the conversation, refreshed on a timer, showing:
 
 It also keeps a status line such as `RuView · 2 nodes · radar present`.
 
+Keys `1`, `2` and `3` switch between three views (ADR-378):
+- **Overview**: the cards.
+- **CSI waterfall**: per-subcarrier amplitude over time, labelled MEASURED or
+  SYNTHETIC; `n` cycles nodes.
+- **Radar**: a range fan with an animated ping, plus heart, breathing and
+  distance charts. The values are device-reported and not validated, and the
+  kit reports range, not bearing.
+
+The two live views draw in terminal cells and animate in place.
+
 ```bash
 npx @ruvnet/ruview@0.9.0 mod           # prints the mod's path in your install and how to load it
 claude --plugin-dir "<that path>"       # try it for one session
@@ -1079,9 +1089,11 @@ claude --plugin-dir "<that path>"       # try it for one session
 | `/ruview` | Open or close the pane |
 | `/ruview refresh` | Run one capture now; the result goes in the status line |
 | `/ruview off` | Close the pane |
+| `/ruview waterfall` / `/ruview radar` | Open on that view |
 
 **Settings** (`claude plugin configure ruview-live`): `udpPort`, `radarHost`,
-`refreshSeconds` and `captureSeconds`.
+`refreshSeconds`, `captureSeconds` and `liveRefreshSeconds` (live views,
+default 4 s).
 
 The mod only runs the package's read-only CLI commands. Mods are early access:
 if `/ruview` is missing, start Claude Code with
@@ -1105,6 +1117,7 @@ Design records:
 - [ADR-376](adr/ADR-376-ruview-umbrella-npm-package.md): the one-install
   `ruview` package, pending the npm name;
 - [ADR-377](adr/ADR-377-ruview-live-claude-code-mod.md): the Claude Code mod.
+- [ADR-378](adr/ADR-378-ruview-live-showcase-views.md): the mod's CSI waterfall and radar views (keys 1/2/3, `esp32 --spectrum`).
 
 ---
 
