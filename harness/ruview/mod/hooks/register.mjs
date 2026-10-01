@@ -165,12 +165,18 @@ export function register(on, options = {}) {
     }
   }
 
-  async function open() {
-    await host.open({ id: PANE_ID, title: 'RuView', closeOnEscape: true });
+  /** Start the refresh timer and fetch now, unless already polling. */
+  function startPolling() {
     isOpen = true;
-    stop();
+    if (stopTimer) return;
     stopTimer = cancelOf(host.every(settings.refreshMs, () => { void refresh(); }));
     void refresh();
+  }
+
+  async function open() {
+    await host.open({ id: PANE_ID, title: 'RuView', closeOnEscape: true });
+    stop();
+    startPolling();
   }
 
   async function close() {
@@ -206,6 +212,10 @@ export function register(on, options = {}) {
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE_ID) return next(e);
+    // A reload (hot reload, or a resumed session) re-runs register with fresh
+    // variables while the engine keeps the pane open: drawing it means it is
+    // open, so resume polling instead of waiting for the first capture forever.
+    if (host && !stopTimer) startPolling();
     const ui = await $.ui.resolve(e);
     return viewOf(ui, model, { refreshMs: settings.refreshMs, busy, onRefresh: () => { void refresh(); }, onClose: () => { void close(); } });
   });

@@ -75,6 +75,46 @@ describe('register', () => {
     expect(runs.length).toBe(afterClose)
   })
 
+  test('a pane drawn after a reload resumes polling instead of waiting forever', async ($, on) => {
+    // Seen live: a hot reload re-runs register with fresh variables while the
+    // engine keeps the pane open, so the drawing sat at "waiting for the first
+    // capture…" with no timer running.
+    const runs: (readonly string[])[] = []
+    const clock = mock.clock(on)
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('command.register', ($, e) => ({ value: { command: e.name } }))
+    on('process.run', ($, e) => {
+      runs.push(e.argv)
+      return { value: { exitCode: 0, stdout: JSON.stringify(CAPTURE), stderr: '' } }
+    })
+    on('ui.status', () => ({ value: undefined }))
+    on('ui.invalidate', () => ({ value: undefined }))
+    const PANE = {
+      title: 'RuView',
+      isFocused: false,
+      bodyColumns: 100,
+      placement: 'dock' as const,
+      scroll: { offset: 0, bodyRows: 30 },
+      view: {},
+    }
+
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+    // No /ruview in this module instance: the engine draws the pane it kept open.
+    const first = await $.ui.mount({ plugin: 'ruview-live', surface: 'terminal', component: 'Pane', requestId: 'ruview-live', props: PANE })
+    for (let i = 0; i < 5; i++) await clock.settle()
+    expect(runs.length).toBeGreaterThanOrEqual(1)
+    await first.unmount()
+
+    const again = await $.ui.mount({ plugin: 'ruview-live', surface: 'terminal', component: 'Pane', requestId: 'ruview-live', props: PANE })
+    expect(await again.find({ type: 'Text', text: /NODES/ })).toBeDefined()
+    expect(await again.find({ type: 'Text', text: /waiting for the first capture/ })).toBeUndefined()
+    const polled = runs.length
+    clock.advance(15_000)
+    for (let i = 0; i < 5; i++) await clock.settle()
+    expect(runs.length).toBeGreaterThan(polled)
+    await again.unmount()
+  })
+
   test('/ruview refresh with no nodes reports the honest failure in the status', async ($, on) => {
     const statuses: (string | undefined)[] = []
     mock.clock(on)
