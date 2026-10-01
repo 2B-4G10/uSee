@@ -456,8 +456,8 @@ authority. Versioned collections are `sites`, `buildings`, `floors`,
 The dependency-free contributor harness exposes the same read path:
 
 ```bash
-npx @ruvnet/ruview@0.9.0 spaces --resource alerts --limit 25
-npx @ruvnet/ruview@0.9.0 mcp start
+npx @ruvnet/ruview@0.9.1 spaces --resource alerts --limit 25
+npx @ruvnet/ruview@0.9.1 mcp start
 ```
 
 Its MCP tool is `ruview_spaces_list`. MCP reads are OAuth-only, use the fixed
@@ -980,8 +980,8 @@ Every result is honest about what it is:
   not validated against a reference.
 
 ```bash
-npx @ruvnet/ruview@0.9.0 --help
-npx @ruvnet/ruview@0.9.0 doctor          # what works on this machine, with fixes
+npx @ruvnet/ruview@0.9.1 --help
+npx @ruvnet/ruview@0.9.1 doctor          # what works on this machine, with fixes
 ```
 
 In a terminal, commands print a formatted view. Pipes and `--json` print JSON,
@@ -993,25 +993,25 @@ Run these on the machine the hardware is plugged into.
 
 ```bash
 # What is plugged in (USB VID:PID → ESP32, Realtek RTL8721Dx, radar, LiDAR)
-npx @ruvnet/ruview@0.9.0 devices
+npx @ruvnet/ruview@0.9.1 devices
 
 # CSI nodes streaming to this machine (UDP 5005): ESP32 ADR-018 frames and
 # Realtek RAC1 frames, per node rate, loss, RSSI and CSI shape
-npx @ruvnet/ruview@0.9.0 esp32 --seconds 10
-npx @ruvnet/ruview@0.9.0 esp32 --watch                 # live view, redrawn every few seconds
-npx @ruvnet/ruview@0.9.0 esp32 --seconds 45 --analyze  # live CSI through the vitals kernel
+npx @ruvnet/ruview@0.9.1 esp32 --seconds 10
+npx @ruvnet/ruview@0.9.1 esp32 --watch                 # live view, redrawn every few seconds
+npx @ruvnet/ruview@0.9.1 esp32 --seconds 45 --analyze  # live CSI through the vitals kernel
 
 # A board's serial console, without resetting it
-npx @ruvnet/ruview@0.9.0 monitor --port COM9
-npx @ruvnet/ruview@0.9.0 monitor --port COM10 --baud 1500000   # Realtek Ameba
+npx @ruvnet/ruview@0.9.1 monitor --port COM9
+npx @ruvnet/ruview@0.9.1 monitor --port COM10 --baud 1500000   # Realtek Ameba
 
 # 60 GHz / 24 GHz radar: raw UART, or an ESPHome kit on your network
-npx @ruvnet/ruview@0.9.0 mmwave --port COM5 --model auto
-npx @ruvnet/ruview@0.9.0 mmwave --source esphome --host 192.168.1.50
+npx @ruvnet/ruview@0.9.1 mmwave --port COM5 --model auto
+npx @ruvnet/ruview@0.9.1 mmwave --source esphome --host 192.168.1.50
 
 # Flash ESP32 firmware: plan first, then write with --confirm (records boot evidence)
-npx @ruvnet/ruview@0.9.0 flash-plan --port COM16 --bundle firmware/esp32-csi-node/release_bins/c6-adr110 --variant c6
-npx @ruvnet/ruview@0.9.0 flash --port COM16 --bundle firmware/esp32-csi-node/release_bins/c6-adr110 --variant c6 --confirm
+npx @ruvnet/ruview@0.9.1 flash-plan --port COM16 --bundle firmware/esp32-csi-node/release_bins/c6-adr110 --variant c6
+npx @ruvnet/ruview@0.9.1 flash --port COM16 --bundle firmware/esp32-csi-node/release_bins/c6-adr110 --variant c6 --confirm
 ```
 
 **What the alerts mean:**
@@ -1034,11 +1034,11 @@ owns the radar, so read it over the network with `--source esphome`.
 
 ```bash
 # Claude Code, Codex or any MCP client (stdio)
-claude mcp add ruview -- npx -y @ruvnet/ruview@0.9.0 mcp start
+claude mcp add ruview -- npx -y @ruvnet/ruview@0.9.1 mcp start
 
 # HTTP, for ChatGPT and remote clients
 export RUVIEW_MCP_TOKEN="$(node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))")"
-RUVIEW_MCP_GRANTS=device-access npx @ruvnet/ruview@0.9.0 mcp start --http --port 8790
+RUVIEW_MCP_GRANTS=device-access npx @ruvnet/ruview@0.9.1 mcp start --http --port 8790
 ```
 
 **Connecting ChatGPT.** Clients that can send headers use
@@ -1077,7 +1077,7 @@ Keys `1`, `2` and `3` switch between three views (ADR-378):
 The two live views draw in terminal cells and animate in place.
 
 ```bash
-npx @ruvnet/ruview@0.9.0 mod           # prints the mod's path in your install and how to load it
+npx @ruvnet/ruview@0.9.1 mod           # prints the mod's path in your install and how to load it
 claude --plugin-dir "<that path>"       # try it for one session
 # or from the RuView marketplace, inside Claude Code:
 #   /plugin marketplace add ruvnet/RuView

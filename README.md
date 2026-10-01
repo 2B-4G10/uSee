@@ -54,30 +54,30 @@ Companion packages: [`homecore`](harness/homecore/README.md) (Homecore developer
 
 ```bash
 # Check the local setup and get source-cited guidance
-npx @ruvnet/ruview@0.9.0 doctor
-npx @ruvnet/ruview@0.9.0 guidance --topic sensing --query "model loading"
+npx @ruvnet/ruview@0.9.1 doctor
+npx @ruvnet/ruview@0.9.1 guidance --topic sensing --query "model loading"
 
 # Hardware: what is plugged in, live CSI from your nodes, a 60 GHz radar kit
-npx @ruvnet/ruview@0.9.0 devices
-npx @ruvnet/ruview@0.9.0 esp32 --watch                       # ESP32 + Realtek RAC1 nodes, live view
-npx @ruvnet/ruview@0.9.0 esp32 --seconds 45 --analyze        # live CSI through the vitals kernel
-npx @ruvnet/ruview@0.9.0 mmwave --source esphome --host <kit-ip>
+npx @ruvnet/ruview@0.9.1 devices
+npx @ruvnet/ruview@0.9.1 esp32 --watch                       # ESP32 + Realtek RAC1 nodes, live view
+npx @ruvnet/ruview@0.9.1 esp32 --seconds 45 --analyze        # live CSI through the vitals kernel
+npx @ruvnet/ruview@0.9.1 mmwave --source esphome --host <kit-ip>
 
 # Agents: MCP over stdio, or over HTTP for ChatGPT (token-protected, read tools only)
-npx @ruvnet/ruview@0.9.0 mcp start
-RUVIEW_MCP_GRANTS=device-access npx @ruvnet/ruview@0.9.0 mcp start --http
+npx @ruvnet/ruview@0.9.1 mcp start
+RUVIEW_MCP_GRANTS=device-access npx @ruvnet/ruview@0.9.1 mcp start --http
 
 # Claude Code: a live sensing pane (/ruview), shipped in the package
-npx @ruvnet/ruview@0.9.0 mod
+npx @ruvnet/ruview@0.9.1 mod
 
 # Run a read-only RuView agent through Codex
-npx @ruvnet/ruview@0.9.0 agent run --host codex --repo . \
+npx @ruvnet/ruview@0.9.1 agent run --host codex --repo . \
   --prompt "Find the nearest tests and cite the source files"
 
 # Check claims, replay the deterministic proof, search the reviewed brain
-npx @ruvnet/ruview@0.9.0 claim-check --file REPORT.md
-npx @ruvnet/ruview@0.9.0 verify
-npx @ruvnet/ruview@0.9.0 brain search --query "calibration"
+npx @ruvnet/ruview@0.9.1 claim-check --file REPORT.md
+npx @ruvnet/ruview@0.9.1 verify
+npx @ruvnet/ruview@0.9.1 brain search --query "calibration"
 ```
 
 **Safety:**
@@ -722,12 +722,12 @@ claude --plugin-dir ./plugins/ruview
 Verify the plugin structure: `bash plugins/ruview/scripts/smoke.sh`. Full details: [`plugins/ruview/README.md`](plugins/ruview/README.md).
 
 **Live sensing pane (Claude Code mod):** the same marketplace also lists `ruview-live`, a Claude Code mod.
-- Install it with `/plugin install ruview-live@ruview`, or run `npx @ruvnet/ruview@0.9.0 mod` for its path inside the npm package.
+- Install it with `/plugin install ruview-live@ruview`, or run `npx @ruvnet/ruview@0.9.1 mod` for its path inside the npm package.
 - `/ruview` opens a pane beside the transcript with your CSI nodes and radar, refreshed on a timer, plus a one-line status.
 - It is read-only.
 - Mods are early access; if `/ruview` is missing, start Claude Code with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. See [ADR-377](docs/adr/ADR-377-ruview-live-claude-code-mod.md).
 
-For the portable RuView MetaHarness, use `npx @ruvnet/ruview@0.9.0`. The quick commands and a fuller explanation are in the collapsed MetaHarness section near the top of this README, in [`harness/ruview/`](harness/ruview/README.md), and in the [user guide](docs/user-guide.md#ruview-npm-toolkit-ruvnetruview).
+For the portable RuView MetaHarness, use `npx @ruvnet/ruview@0.9.1`. The quick commands and a fuller explanation are in the collapsed MetaHarness section near the top of this README, in [`harness/ruview/`](harness/ruview/README.md), and in the [user guide](docs/user-guide.md#ruview-npm-toolkit-ruvnetruview).
 
 </details>
 

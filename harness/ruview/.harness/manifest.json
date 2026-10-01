@@ -3,7 +3,7 @@
   "generator": "RuView metaharness provenance v2",
   "template": "vertical:ruview",
   "name": "@ruvnet/ruview",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "hosts": [
     "claude-code",
     "codex"
@@ -32,7 +32,7 @@
     "flywheel/genome.json": "75db44a3cab70d9459fc8c07863f640ac1214bfaa243483939e1506d63f51214",
     "flywheel/replay.mjs": "0670ca0b03701f4afe0b4bca8a3d58d481676b61a94a5b98c6a425aefb1159ab",
     "flywheel/run.mjs": "6d4f97db16900c45367b6538848cbe1915af999e663720dfc51f2bb1698f1cd0",
-    "package.json": "c725457bc2d96c7305dcc8f11cd61cb2ef20d3fbe0baa5c9a376bc9897eb8641",
+    "package.json": "01627b1b2c804c6dddfea1b366058c23c0e99111829dcd3e32967b76d0bce997",
     "scripts/sync-skills.mjs": "43715dab61e204dc91bbd61755810e8fdb2f66e2b0c0bd791b4bf48a2e293565",
     "scripts/update-manifest.mjs": "8f56764b8f70aed55da0c7e2417ae875b0d58d781d839b6db7f115f08af61e6b",
     "scripts/verify-manifest.mjs": "6491a221762efcfeb3e749ecab243b204f17fd5bc871f3d4025597f31b8f0f10",
@@ -75,7 +75,7 @@
     "src/training.js": "b8451c48db69c7d077d75f07500996213beaa52705116f64afafe084e68e3956",
     "src/ui/console-widget.js": "0d2f707d57b5ec54968dee1dc80f31c7db9152dcadfc48700c18379dabb55462"
   },
-  "filesDigest": "bc257304cf899a32e83bbcf6b31617157ed03fd40a77f9a552b5c14fda53e78e",
+  "filesDigest": "60935843295b67f3354b4b02cc31df62bac8b5093568b11f896dfc7fc3a91545",
   "brainDigest": "c0fb7b079ded157059b91601361429944697dae3cc42abc00dfe1a680986b0f4",
   "gateFingerprint": "6e53c784eee38310188948fc75fb49e6b4ebc04e247d01b903fa8c8a92d67bdd",
   "developmentPins": {
