@@ -94,6 +94,29 @@ packages, install them separately, and run three CLIs and two MCP servers.
    - Subsequent releases return to the CI workflow. Adding `ruview` and
      `@ruvnet/ruview-kernel` to `ruview-npm-release.yml` is follow-up work.
 
+## Release outcome (2026-10-01)
+
+**Published from ruvzen** (exact tarballs that passed the clean-directory
+smoke test; sha256 in the release thread):
+
+| Package | Version |
+|---|---|
+| `@ruvnet/ruview-kernel` | 0.1.0 |
+| `homecore` | 0.1.0 |
+| `@ruvnet/ruview` | 0.8.0 |
+
+All three were re-installed from the registry and smoke-tested:
+- `npx -y @ruvnet/ruview@0.8.0` works;
+- the harness self-test resolves the published kernel;
+- a live ESPHome radar read succeeded.
+
+**`ruview` was refused by npm:** `403 Forbidden — Package name too similar to
+existing package iview` (typosquat protection).
+- The umbrella is ready in `harness/ruview-umbrella`. Until npm support grants
+  the name, it is unpublished.
+- If the request is declined, the fallback is a scoped name
+  (`@ruvnet/ruview-platform`).
+
 ## Consequences
 
 - `npx ruview` is the single entry point for operators and agents. One MCP
