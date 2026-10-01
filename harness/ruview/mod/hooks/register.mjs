@@ -15,7 +15,7 @@ import { ANIMATED, picturesOf, sizesOf, viewOf } from './views.mjs';
 export * from './anim.mjs';
 export * from './model.mjs';
 export * from './raster.mjs';
-export { ANIMATED, compactOf, picturesOf, sizesOf, viewOf } from './views.mjs';
+export { ANIMATED, picturesOf, sizesOf, viewOf } from './views.mjs';
 
 export const PANE_ID = 'ruview-live';
 export const COMMAND = 'ruview';
@@ -98,7 +98,7 @@ export function register(on, options = {}) {
   }
 
   /** Options shared by the full drawing and each animation frame. */
-  const drawOpts = (t) => ({ mode, nodeIndex, lag, history, t, columns: size.columns, rows: size.rows, placement: size.placement });
+  const drawOpts = (t) => ({ mode, nodeIndex, lag, history, t, columns: size.columns, rows: size.rows });
   const shownModel = () => (model ? { ...model, spectrum } : null);
 
   /** One animation frame: repaint each mounted animated Raster in place. */
@@ -199,13 +199,12 @@ export function register(on, options = {}) {
     size = {
       columns: e.props?.bodyColumns ?? e.viewport?.columns ?? 100,
       rows: e.props?.scroll?.bodyRows ?? e.viewport?.rows ?? 30,
-      placement: e.props?.placement,
     };
     const ui = await $.ui.resolve(e);
     const now = await $.clock.now();
     return viewOf(ui, shownModel(), {
       ...drawOpts(now), refreshMs: settings.refreshMs, liveRefreshMs: settings.liveRefreshMs, busy, now,
-      focused: e.props?.isFocused === true, placement: e.props?.placement,
+      focused: e.props?.isFocused !== false,
       udpPort: settings.udpPort, radarConfigured: Boolean(settings.radarHost),
       onRefresh: () => { void refresh(); },
       onClose: () => { void close(); },
