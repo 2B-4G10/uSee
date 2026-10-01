@@ -694,7 +694,11 @@ mod tests {
         assert_eq!(padded[0], 0);
         assert_eq!(&padded[1..], &short[..], "the same big-endian number");
         let full = vec![0xCD; SRP_VERIFIER_LEN];
-        assert_eq!(padded_verifier(full.clone()), full, "a full-width verifier is untouched");
+        assert_eq!(
+            padded_verifier(full.clone()),
+            full,
+            "a full-width verifier is untouched"
+        );
     }
 
     #[test]
