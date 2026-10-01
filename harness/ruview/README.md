@@ -242,6 +242,28 @@ The bundled `.claude/settings.json` registers the `ruview` MCP server
 (`npx -y @ruvnet/ruview mcp start`). Drop this package's `.claude/` into a repo, or run
 `npx @ruvnet/ruview install --host claude-code`.
 
+## ChatGPT and MCP Apps (ADR-375)
+
+`ruview_esp32_capture`, `ruview_devices_scan` and `ruview_doctor` render in a
+self-contained console widget (`ui://ruview/console-v1.html`) in ChatGPT and
+other MCP Apps hosts, with a Refresh button that re-runs the tool. Results also
+carry `structuredContent`.
+
+```bash
+# MCP over HTTP: loopback, token-authenticated, read tools only
+export RUVIEW_MCP_TOKEN="$(node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))")"
+RUVIEW_MCP_GRANTS=device-access npx @ruvnet/ruview mcp start --http --port 8790
+```
+
+Clients that can send headers use `Authorization: Bearer <token>` on
+`http://127.0.0.1:8790/mcp`. ChatGPT connectors cannot, so expose the port over
+HTTPS (a tunnel or reverse proxy) and add `https://<host>/mcp/<token>` as the
+connector URL. Write grants (`hardware-write`, `workspace-write`) are never
+honoured over HTTP: flashing and calibration stay on the CLI and stdio.
+
+In a terminal, commands print a formatted view; pipes and `--json` print JSON.
+`ruview esp32 --watch` redraws live capture windows with per-node trends.
+
 ## Hosts
 
 Claude Code and Codex are implemented directly and tested with the local,

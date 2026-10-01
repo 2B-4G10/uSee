@@ -28,6 +28,7 @@ import { execTool } from './exec.js';
 import { BAUD_RATES, FIRMWARE_VARIANTS, flashFirmware, listSerialPorts } from './firmware.js';
 import { SPLITS, TRAIN_MODES, runTraining, trainingGate } from './training.js';
 import { DOCTOR_GROUPS, runDoctor } from './doctor.js';
+import { UI_TOOLS, uiToolMeta } from './ui/console-widget.js';
 import { scanDevices } from './devices/registry.js';
 import { captureEsp32 } from './devices/esp32.js';
 import { MMWAVE_MODELS, readMmwave } from './devices/mmwave.js';
@@ -146,7 +147,7 @@ const ONBOARD_PATHS = {
 
 // Read-only serial monitor script; the port arrives via sys.argv (ADR-263 O5 —
 // never spliced into interpreter source).
-const MONITOR_SCRIPT = [
+export const MONITOR_SCRIPT = [
   'import sys,time',
   'try:',
   ' import serial',
@@ -161,7 +162,7 @@ const MONITOR_SCRIPT = [
   'ser.port=port; ser.baudrate=baud; ser.timeout=1',
   'ser.dtr=False; ser.rts=False',
   'ser.open()',
-  'csi=0; n=0; t=time.time()',
+  'csi=0; n=0; starved=0; t=time.time()',
   'while time.time()-t<dur:',
   ' ln=ser.readline()',
   ' if not ln: continue',
@@ -169,8 +170,9 @@ const MONITOR_SCRIPT = [
   ' n+=1',
   " if 'CSI cb' in s or 'csi_collector' in s or 'RUVIEW_CSI: frame #' in s: csi+=1",
   " if 'MGMT+DATA' in s: print('UPGRADE_MGMT_DATA')",
+  " if 'lack of csi buf' in s or 'csi buf not enough' in s: starved+=1",
   'ser.close()',
-  "print(f'LINES={n} CSI={csi}')",
+  "print(f'LINES={n} CSI={csi} STARVED={starved}')",
 ].join('\n');
 
 /**
@@ -263,9 +265,14 @@ export const TOOLS = {
       if (!r.ok) return { ok: false, reason: 'port_error', stderr: r.stderr, error: r.error };
       const csi = Number((r.stdout.match(/CSI=(\d+)/) || [])[1] || 0);
       const lines = Number((r.stdout.match(/LINES=(\d+)/) || [])[1] || 0);
+      const starved = Number((r.stdout.match(/STARVED=(\d+)/) || [])[1] || 0);
       const upgraded = r.stdout.includes('UPGRADE_MGMT_DATA');
-      const out = { ok: csi > 0, csi_callbacks: csi, lines, baud, mgmt_data_upgrade: upgraded, reset_on_open: false, raw: r.stdout.trim() };
-      if (csi === 0) {
+      const out = { ok: csi > 0 && starved === 0, csi_callbacks: csi, lines, baud, mgmt_data_upgrade: upgraded, reset_on_open: false, raw: r.stdout.trim() };
+      if (starved) {
+        out.csi_buffer_starved = starved;
+        out.reason = 'csi_buffer_starvation';
+        out.hint = `${starved} 'lack of csi buf' lines: the radio is generating CSI reports but the firmware is not returning report buffers, so CSI stops while heartbeats continue (heartbeat-only on UDP). Reset the node now; the lasting fix is in the firmware's CSI report handling (buffer release/drain rate vs. CSI_REPORT_BUF_NUM).`;
+      } else if (csi === 0) {
         out.hint = lines === 0
           ? 'No console output on this port. ESP32-C6/S3 builds with CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG log on the native USB port (303A:1001), not the UART bridge: attach that port, or confirm CSI over the network with `ruview esp32 --seconds 10`. Realtek Ameba boards log at --baud 1500000.'
           : 'Console output but no CSI log lines in the window. CSI logs are rate-limited (ESP32: first 3, then every 100th callback); lengthen --seconds or confirm over the network with `ruview esp32 --seconds 10`.';
@@ -652,9 +659,11 @@ export async function runTool(name, args, context = {}) {
   }
 }
 
-/** MCP-shaped tool list: [{name, description, inputSchema}]. */
+/** MCP-shaped tool list: name, title, schema, annotations, and ui:// metadata for UI tools (ADR-375). */
 export function listTools() {
   return Object.entries(TOOLS).map(([name, t]) => ({
-    name, description: t.description, inputSchema: t.inputSchema, annotations: mcpAnnotations(name),
+    name, ...(t.title ? { title: t.title } : {}), description: t.description, inputSchema: t.inputSchema,
+    annotations: { ...(t.title ? { title: t.title } : {}), ...mcpAnnotations(name) },
+    ...(UI_TOOLS.includes(name) ? { _meta: uiToolMeta() } : {}),
   }));
 }

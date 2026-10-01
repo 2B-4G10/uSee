@@ -43,8 +43,9 @@ jobs:
             # ADR-283/325: brain + local hosts + replay assets + guarded Spaces OAuth adapter;
             # still runtime-dependency-free. ADR-369..374 add the SDK, firmware
             # flashing, training runner/gate, doctor, device access, and SSH
-            # hosts: 320 KiB reviewed ceiling.
-            unpacked_budget: 327680
+            # hosts. ADR-375 adds the MCP Apps console widget (~12 KB), the
+            # Streamable HTTP transport and the terminal UI: 384 KiB reviewed ceiling.
+            unpacked_budget: 393216
           - dir: harness/homecore
             build: false
             publishable: true

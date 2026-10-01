@@ -345,7 +345,7 @@ export function captureEsp32(args = {}, deps = {}) {
       if (packets === 0) {
         failure = { reason: 'no_packets', remedy: `No node packets reached ${bind}:${port}. Check the node's target IP/port (provision.py --target-ip/--target-port), that this host is on the same network, and the firewall (UDP ${port}).` };
       } else if (NODE_PACKETS(summary) === 0 && !summary.meshMessages && summary.heartbeats > 0) {
-        failure = { reason: 'heartbeat_only', remedy: 'Realtek nodes are alive (RHB1 heartbeats) but no RAC1 CSI arrived. Reset the board; if it persists, check its serial log at 1500000 baud for csi_sequence and reduce channel contention (ADR-323).' };
+        failure = { reason: 'heartbeat_only', remedy: 'Realtek nodes are alive (RHB1 heartbeats) but no RAC1 CSI arrived. Run `ruview monitor --port <p> --baud 1500000`: "lack of csi buf" lines mean CSI report-buffer starvation in the firmware (reset the board); otherwise check csi_sequence and channel contention (ADR-323).' };
       } else if (decoded === 0) {
         failure = { reason: 'no_decodable_packets', remedy: 'Packets arrived but none matched a known RuView format (see unknownMagics). Check the sender and firmware version.' };
       }
