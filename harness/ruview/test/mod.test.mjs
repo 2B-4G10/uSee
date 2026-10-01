@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cliPathOf, commandsOf, modelOf, resultOf, settingsOf, statusOf, viewOf } from '../mod/hooks/register.mjs';
+import { ageOf, cliPathOf, commandsOf, historyWith, modelOf, plausibilityOf, resultOf, settingsOf, sparkline, statusOf, viewOf } from '../mod/hooks/register.mjs';
 
 const capture = {
   ok: true, packets: 120, decodedPackets: 118,
@@ -62,7 +62,7 @@ test('the pane draws with the surface elements and wires both buttons', () => {
   walk(tree);
   const texts = flat.filter((n) => n.type === 'Text').map((n) => String(n.props.children));
   assert.ok(texts.some((t) => t.includes('heartbeats but no CSI')));
-  assert.ok(texts.some((t) => t.startsWith('RADAR')));
+  assert.ok(texts.some((t) => t === '60 GHz RADAR'));
   assert.ok(texts.some((t) => t.includes('not validated')));
   assert.ok(texts.some((t) => t === 'SYNTHETIC'));
   const buttons = flat.filter((n) => n.type === 'Button');
@@ -87,6 +87,59 @@ test('the pane never prints "Invalid Date" (live bug: $.clock.now() resolves a p
 test('refresh awaits the clock before building the model', () => {
   const src = readFileSync(new URL('../mod/hooks/register.mjs', import.meta.url), 'utf8');
   assert.match(src, /model = modelOf\(.*await host\.now\(\)\);/);
+});
+
+test('sparklines, plausibility, ages and history are bounded and honest', () => {
+  assert.equal(sparkline([1, 2, 3, 4, 5, 6, 7, 8]), '▁▂▃▄▅▆▇█');
+  assert.equal(sparkline([5]), '', 'one point is not a trend');
+  assert.equal(sparkline([null, 3, NaN, 3]), '▄▄');
+  assert.equal(plausibilityOf('breathing', 1.0), 'outside 4–40 bpm', 'the live 1.0 bpm reading is flagged');
+  assert.equal(plausibilityOf('heart', 80.7), null);
+  assert.equal(plausibilityOf('heart', 250), 'outside 40–180 bpm');
+  assert.equal(plausibilityOf('breathing', null), null);
+  assert.equal(ageOf(12_400), '12s ago');
+  assert.equal(ageOf(185_000), '3m ago');
+  assert.equal(ageOf(NaN), '');
+  let h = null;
+  for (let i = 0; i < 30; i++) h = historyWith(h, modelOf(capture, { ...radar, heartBpmMean: 70 + i }, i));
+  assert.equal(h.heart.length, 24, 'history is bounded');
+  assert.equal(h.heart.at(-1), 99);
+  assert.equal(h.rates['realtek:3'].length, 24);
+});
+
+test('the redesigned pane: badge, cards side by side when wide, flags implausible vitals', () => {
+  const el = (type) => (props) => ({ type, props });
+  const ui = { Box: el('Box'), Text: el('Text'), Button: el('Button') };
+  const live = { ...radar, breathingBpmMean: 1.0, heartBpmMean: 80.7, distanceCmMean: 40.7, targetsMax: 1 };
+  const model = modelOf(capture, live, 1_000_000);
+  const base = { refreshMs: 15000, busy: false, onRefresh() {}, onClose() {}, udpPort: 5005, radarConfigured: true };
+  const flat = (node, out = []) => { if (node && typeof node === 'object') { out.push(node); [].concat(node.props?.children ?? []).forEach((c) => flat(c, out)); } return out; };
+  const wide = flat(viewOf(ui, model, { ...base, columns: 140, now: 1_012_000 }));
+  const texts = wide.filter((n) => n.type === 'Text').map((n) => String(n.props.children));
+  assert.ok(texts.includes('● LIVE'));
+  assert.ok(texts.some((t) => t.includes('(12s ago)')));
+  assert.ok(texts.some((t) => t.startsWith('● PRESENCE DETECTED · 1 target')));
+  assert.ok(texts.includes('⚠ outside 4–40 bpm'), 'breathing 1.0 bpm is flagged');
+  assert.ok(!texts.includes('⚠ outside 40–180 bpm'), 'heart 80.7 bpm is not flagged');
+  const cardsRow = wide.find((n) => n.type === 'Box' && n.props.children?.some?.((c) => c?.props?.borderStyle === 'round'));
+  assert.equal(cardsRow.props.flexDirection, 'row', 'cards sit side by side when wide');
+  const narrow = flat(viewOf(ui, model, { ...base, columns: 80, now: 1_012_000 }));
+  assert.equal(narrow.find((n) => n.type === 'Box' && n.props.children?.some?.((c) => c?.props?.borderStyle === 'round')).props.flexDirection, 'column');
+  const stale = flat(viewOf(ui, model, { ...base, columns: 80, now: 1_000_000 + 120_000 }));
+  assert.ok(stale.some((n) => n.type === 'Text' && n.props.children === '○ STALE'));
+  for (const n of wide) assert.ok(!('flexBasis' in (n.props || {})), 'only props the terminal Box takes');
+});
+
+test('no packets is a hint inside the nodes card, not a top alert', () => {
+  const el = (type) => (props) => ({ type, props });
+  const ui = { Box: el('Box'), Text: el('Text'), Button: el('Button') };
+  const m = modelOf({ ok: false, reason: 'no_packets', packets: 0, remedy: 'long remedy text' }, null, 0);
+  assert.equal(m.alerts.length, 0);
+  assert.equal(statusOf(m), 'RuView · 0 nodes');
+  const s = JSON.stringify(viewOf(ui, m, { refreshMs: 15000, busy: false, onRefresh() {}, onClose() {}, udpPort: 5005, radarConfigured: false, columns: 80, now: 0 }));
+  assert.match(s, /check node target IP\/port · firewall UDP 5005/);
+  assert.match(s, /claude plugin configure ruview-live/, 'an unconfigured radar says how to set it');
+  assert.doesNotMatch(s, /long remedy text/);
 });
 
 test('the mod manifest and hooks module are a valid plugin shape', () => {

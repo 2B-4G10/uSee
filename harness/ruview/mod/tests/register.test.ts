@@ -130,7 +130,7 @@ describe('register', () => {
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
     const { text } = await $.command.run({ command: 'ruview', args: 'refresh', origin: { kind: 'composer' } })
 
-    expect(text).toBe('RuView · 0 nodes · 1 alert')
-    expect(statuses.at(-1)).toBe('RuView · 0 nodes · 1 alert')
+    expect(text).toBe('RuView · 0 nodes')
+    expect(statuses.at(-1)).toBe('RuView · 0 nodes')
   })
 })
