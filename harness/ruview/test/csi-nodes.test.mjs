@@ -229,3 +229,17 @@ test('spectrum: binned amplitude frames per node for the waterfall (ADR-378)', a
   assert.deepEqual(validateArguments(tool, { spectrum: true, spectrum_bins: 48, spectrum_frames: 64 }), []);
   assert.notDeepEqual(validateArguments(tool, { spectrum_bins: 4 }), []);
 });
+
+test('spectrum draws multi-antenna ESP32 nodes from their first chain (ADR-018 antenna-major)', async () => {
+  const sub = 8;
+  const b = Buffer.alloc(20 + 2 * sub * 2);
+  b.writeUInt32LE(0xC5110001, 0); b.writeUInt8(9, 4); b.writeUInt8(2, 5); b.writeUInt16LE(sub, 6);
+  for (let k = 0; k < sub; k++) { b.writeInt8(0, 20 + 2 * k); b.writeInt8(3, 21 + 2 * k); } // chain 0: |3|
+  for (let k = 0; k < sub; k++) { b.writeInt8(0, 20 + 2 * (sub + k)); b.writeInt8(7, 21 + 2 * (sub + k)); } // chain 1: |7|
+  assert.equal(parsePacket(b, { iq: true }).amplitudes, null, 'the kernel path still takes single-chain frames only');
+  assert.deepEqual(parsePacket(b, { iq: true, firstChain: true }).chain0Amplitudes, Array(sub).fill(3));
+  const res = await capture({ spectrum: true, spectrum_bins: 8, spectrum_frames: 8 }, [b, b, b]);
+  const [s] = res.spectrum;
+  assert.deepEqual([s.nodeId, s.shape, s.bins], [9, '2x8', 8]);
+  assert.ok(s.frames.every((f) => f.every((v) => v === 3)));
+});

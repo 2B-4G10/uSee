@@ -83,6 +83,15 @@ the surface folds blits between frames anyway.
 - Surfaces without `Raster` (desktop, VS Code, mobile) get a note in the
   showcase views instead of a tree the surface would refuse. The overview works
   everywhere.
+- Only nodes in the latest capture stay in the waterfall. A node that stops
+  streaming, or a failed capture, clears its frames, so old frames are never
+  shown as live. Frames join across captures only when the CSI shape and bin
+  count both match.
+- Multi-antenna ESP32 nodes are drawn from their first chain. ADR-018 lays the
+  tones out antenna-major; this applies to the waterfall only, and the vitals
+  kernel still takes single-chain frames.
+- Animation runs on the real clock, the same one the full render reads. The
+  pulses keep the reported rates even when a frame fires late.
 
 ### Structure
 

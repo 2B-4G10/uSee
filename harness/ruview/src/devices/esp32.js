@@ -129,12 +129,16 @@ export function parsePacket(buf, opts = {}) {
     const flags = buf.readUInt8(19);
     // Per-tone arrays only for single-antenna frames: the kernel takes one chain.
     const iq = iq8(buf, 20, tones, true, Boolean(opts.iq) && antennas === 1);
+    // The waterfall (ADR-378) draws multi-antenna nodes from their first chain:
+    // ADR-018 lays tones out antenna-major, so chain 0 is the first `subcarriers`.
+    const chain0 = opts.firstChain && antennas > 1 ? iq8(buf, 20, subcarriers, true, true).amplitudes : undefined;
     return {
       kind, source: 'esp32', nodeId: buf.readUInt8(4), antennas, subcarriers,
       freqMhz: buf.readUInt32LE(8), seq: buf.readUInt32LE(12),
       rssi: buf.readInt8(16), noiseFloor: buf.readInt8(17), ppdu: buf.readUInt8(18),
       bw40: Boolean(flags & 1), firstWordZeroed: Boolean(flags & 0x20),
       meanAmplitude: iq.mean, amplitudes: iq.amplitudes, phases: iq.phases,
+      ...(chain0 ? { chain0Amplitudes: chain0 } : {}),
     };
   }
   if (kind === 'vitals') {
@@ -328,15 +332,16 @@ export function binAmplitudes(amplitudes, bins) {
 export class SpectrumCollector {
   constructor(frames, bins, maxNodes = 8) { this.frames = frames; this.bins = bins; this.maxNodes = maxNodes; this.byKey = new Map(); }
   add(pkt, t) {
-    if (pkt.kind !== 'csi' || !pkt.amplitudes) return;
+    const amplitudes = pkt.amplitudes ?? pkt.chain0Amplitudes;
+    if (pkt.kind !== 'csi' || !amplitudes) return;
     const key = `${pkt.source}:${pkt.nodeId}|${shapeKey(pkt)}`;
     let c = this.byKey.get(key);
     if (!c) {
       if (this.byKey.size >= this.maxNodes * 4) return;
-      c = { source: pkt.source, nodeId: pkt.nodeId, subcarriers: pkt.subcarriers, rows: [], count: 0, first: t, last: t, synthetic: false };
+      c = { source: pkt.source, nodeId: pkt.nodeId, shape: shapeKey(pkt), subcarriers: pkt.subcarriers, rows: [], count: 0, first: t, last: t, synthetic: false };
       this.byKey.set(key, c);
     }
-    c.rows.push(binAmplitudes(pkt.amplitudes, this.bins));
+    c.rows.push(binAmplitudes(amplitudes, this.bins));
     if (c.rows.length > this.frames) c.rows.shift();
     c.count += 1;
     c.last = t;
@@ -352,7 +357,7 @@ export class SpectrumCollector {
       .sort((a, b) => (a.source === b.source ? a.nodeId - b.nodeId : a.source.localeCompare(b.source)))
       .slice(0, this.maxNodes)
       .map((c) => ({
-        source: c.source, nodeId: c.nodeId, subcarriers: c.subcarriers, bins: c.rows[0]?.length ?? 0,
+        source: c.source, nodeId: c.nodeId, shape: c.shape, subcarriers: c.subcarriers, bins: c.rows[0]?.length ?? 0,
         frames: c.rows, framesSeen: c.count,
         rateHz: c.last > c.first ? Number((((c.count - 1) * 1000) / (c.last - c.first)).toFixed(2)) : null,
         synthetic: c.synthetic,
@@ -387,7 +392,7 @@ export function captureEsp32(args = {}, deps = {}) {
   const stats = new NodeStats();
   const collector = analyze ? new FrameCollector(maxFrames) : null;
   const spectra = spectrum ? new SpectrumCollector(spectrumFrames, spectrumBins) : null;
-  const parseOpts = { iq: analyze || spectrum };
+  const parseOpts = { iq: analyze || spectrum, firstChain: spectrum };
   let packets = 0;
   return new Promise((resolve) => {
     const socket = createSocket(bind.includes(':') ? 'udp6' : 'udp4');

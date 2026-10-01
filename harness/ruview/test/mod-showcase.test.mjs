@@ -176,3 +176,16 @@ test('the pane opens as a dialog that takes the keys, sized to the view', () => 
   }
   assert.ok(VIEW_ROWS.waterfall > VIEW_ROWS.overview, 'the live views ask for more room');
 });
+
+test('review fixes: a silent node leaves the waterfall; a new CSI shape starts over', () => {
+  const a = { key: 'esp32:6', shape: '1x64', bins: 4, frames: [[1], [2]] };
+  const held = spectrumWith([], [a]);
+  assert.deepEqual(spectrumWith(held, []), [], 'a failed capture or silent node never keeps old frames on screen');
+  const other = { key: 'esp32:7', shape: '1x64', bins: 4, frames: [[5]] };
+  assert.deepEqual(spectrumWith(held, [other]).map((s) => s.key), ['esp32:7']);
+  const reshaped = spectrumWith(held, [{ ...a, shape: '1x128', frames: [[9]] }]);
+  assert.deepEqual(reshaped[0].frames, [[9]], 'same bin count, different layout: not joined');
+  const opts = { mode: 'waterfall', refreshMs: 15000, liveRefreshMs: 4000, columns: 120, rows: 34, onMode() {}, onRefresh() {}, onClose() {} };
+  const gone = modelOf({ ok: false, reason: 'no_packets' }, null, 0);
+  assert.match(JSON.stringify(viewOf(UI, { ...gone, spectrum: spectrumWith(held, gone.spectrum) }, opts)), /nothing to draw/, 'the empty card returns once frames stop');
+});

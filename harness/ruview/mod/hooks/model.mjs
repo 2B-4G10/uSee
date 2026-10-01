@@ -109,7 +109,7 @@ export function modelOf(capture, radar, at) {
   const spectrum = (capture?.spectrum || []).map((s) => ({
     key: `${s.source}:${s.nodeId}`,
     label: `${s.source === 'realtek' ? 'realtek' : 'esp32'} ${s.nodeId}`,
-    subcarriers: s.subcarriers, bins: s.bins, frames: Array.isArray(s.frames) ? s.frames : [],
+    shape: s.shape ?? null, subcarriers: s.subcarriers, bins: s.bins, frames: Array.isArray(s.frames) ? s.frames : [],
     rateHz: num(s.rateHz), synthetic: Boolean(s.synthetic),
   }));
   const radarRow = radar && radar.ok !== false ? {
@@ -145,17 +145,18 @@ export function historyWith(history, model, max = HISTORY) {
 
 /**
  * Carry each node's waterfall frames across captures, so the picture scrolls
- * instead of restarting every refresh. A node whose bin count changes starts
- * over; a node absent from this capture keeps its frames.
+ * instead of restarting every refresh. Only nodes in this capture remain: a
+ * node that stopped streaming (or a failed capture) leaves the waterfall, so
+ * old frames are never shown as live. A node whose CSI shape or bin count
+ * changed starts over rather than joining two subcarrier layouts.
  */
 export function spectrumWith(previous, spectrum, max = 128) {
   const byKey = new Map((previous || []).map((s) => [s.key, s]));
-  for (const s of spectrum || []) {
+  return (spectrum || []).map((s) => {
     const old = byKey.get(s.key);
-    const frames = old && old.bins === s.bins ? [...old.frames, ...s.frames] : [...s.frames];
-    byKey.set(s.key, { ...s, frames: frames.slice(-max) });
-  }
-  return [...byKey.values()];
+    const same = old && old.bins === s.bins && old.shape === s.shape;
+    return { ...s, frames: (same ? [...old.frames, ...s.frames] : [...s.frames]).slice(-max) };
+  });
 }
 
 /** One line for the status bar. */

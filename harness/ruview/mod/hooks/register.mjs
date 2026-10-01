@@ -96,6 +96,7 @@ export function register(on, options = {}) {
       model = modelOf(resultOf(capture), resultOf(radar), await host.now());
       history = historyWith(history, model);
       spectrum = spectrumWith(spectrum, model.spectrum);
+      lag = Object.fromEntries(Object.entries(lag).filter(([key]) => spectrum.some((s) => s.key === key)));
       // New frames join the replay queue: shown at their arrival rate, not at once.
       for (const s of model.spectrum) {
         const held = spectrum.find((x) => x.key === s.key)?.frames.length ?? 0;
@@ -117,9 +118,11 @@ export function register(on, options = {}) {
     if (!host || animating) return;
     animating = true;
     try {
-      // Frame time advances by the frame period: no clock round trip per frame.
-      const t = (lastFrame ?? 0) + FRAME_MS;
-      const dt = FRAME_MS;
+      // Real time, the clock the full render reads too: pulses keep the
+      // reported rates and the replay keeps up even when a frame fires late.
+      const t = await host.now();
+      if (!Number.isFinite(t)) return;
+      const dt = Number.isFinite(lastFrame) ? Math.max(0, Math.min(1000, t - lastFrame)) : 0;
       lastFrame = t;
       for (const s of spectrum) lag[s.key] = drain(lag[s.key], s.rateHz, dt);
       const pics = picturesOf(shownModel(), drawOpts(t));
