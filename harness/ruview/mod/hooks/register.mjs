@@ -96,7 +96,8 @@ export function viewOf(ui, model, { refreshMs, busy, onRefresh, onClose }) {
   const { Box, Text, Button } = ui;
   const line = (children, props = {}) => Text({ ...props, wrap: 'truncate-end', children });
   const rows = [];
-  rows.push(line(model ? `updated ${new Date(model.at).toLocaleTimeString()} · every ${Math.round(refreshMs / 1000)}s · ${model.decoded}/${model.packets} packets decoded` : 'waiting for the first capture…', { dimColor: true }));
+  const when = model && Number.isFinite(model.at) ? new Date(model.at).toLocaleTimeString() : '—';
+  rows.push(line(model ? `updated ${when} · every ${Math.round(refreshMs / 1000)}s · ${model.decoded}/${model.packets} packets decoded` : 'waiting for the first capture…', { dimColor: true }));
   for (const a of model?.alerts || []) rows.push(Text({ color: a.level === 'bad' ? 'red' : 'yellow', wrap: 'wrap', children: `! ${a.text}` }));
   if (model) {
     rows.push(line('NODES', { bold: true }));
@@ -155,7 +156,8 @@ export function register(on, options = {}) {
     host.invalidate();
     try {
       const [capture, radar] = await Promise.all([runCli(commands.capture), runCli(commands.radar)]);
-      model = modelOf(resultOf(capture), resultOf(radar), host.now());
+      // $.clock.now() resolves a promise of epoch milliseconds.
+      model = modelOf(resultOf(capture), resultOf(radar), await host.now());
       host.status(statusOf(model));
     } finally {
       busy = false;

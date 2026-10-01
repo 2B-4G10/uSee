@@ -73,6 +73,22 @@ test('the pane draws with the surface elements and wires both buttons', () => {
   assert.match(JSON.stringify(waiting), /waiting for the first capture/);
 });
 
+test('the pane never prints "Invalid Date" (live bug: $.clock.now() resolves a promise)', () => {
+  const el = (type) => (props) => ({ type, props });
+  const ui = { Box: el('Box'), Text: el('Text'), Button: el('Button') };
+  const opts = { refreshMs: 15000, busy: false, onRefresh() {}, onClose() {} };
+  const pending = JSON.stringify(viewOf(ui, modelOf(capture, null, Promise.resolve(0)), opts));
+  assert.doesNotMatch(pending, /Invalid Date/);
+  assert.match(pending, /updated — · every 15s/);
+  const timed = JSON.stringify(viewOf(ui, modelOf(capture, null, Date.UTC(2026, 9, 1, 12, 0, 0)), opts));
+  assert.doesNotMatch(timed, /Invalid Date|updated —/);
+});
+
+test('refresh awaits the clock before building the model', () => {
+  const src = readFileSync(new URL('../mod/hooks/register.mjs', import.meta.url), 'utf8');
+  assert.match(src, /model = modelOf\(.*await host\.now\(\)\);/);
+});
+
 test('the mod manifest and hooks module are a valid plugin shape', () => {
   const plugin = JSON.parse(readFileSync(new URL('../mod/.claude-plugin/plugin.json', import.meta.url), 'utf8'));
   const hooks = JSON.parse(readFileSync(new URL('../mod/hooks/hooks.json', import.meta.url), 'utf8'));
