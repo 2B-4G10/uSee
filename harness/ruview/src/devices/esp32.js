@@ -129,12 +129,16 @@ export function parsePacket(buf, opts = {}) {
     const flags = buf.readUInt8(19);
     // Per-tone arrays only for single-antenna frames: the kernel takes one chain.
     const iq = iq8(buf, 20, tones, true, Boolean(opts.iq) && antennas === 1);
+    // The waterfall (ADR-378) draws multi-antenna nodes from their first chain:
+    // ADR-018 lays tones out antenna-major, so chain 0 is the first `subcarriers`.
+    const chain0 = opts.firstChain && antennas > 1 ? iq8(buf, 20, subcarriers, true, true).amplitudes : undefined;
     return {
       kind, source: 'esp32', nodeId: buf.readUInt8(4), antennas, subcarriers,
       freqMhz: buf.readUInt32LE(8), seq: buf.readUInt32LE(12),
       rssi: buf.readInt8(16), noiseFloor: buf.readInt8(17), ppdu: buf.readUInt8(18),
       bw40: Boolean(flags & 1), firstWordZeroed: Boolean(flags & 0x20),
       meanAmplitude: iq.mean, amplitudes: iq.amplitudes, phases: iq.phases,
+      ...(chain0 ? { chain0Amplitudes: chain0 } : {}),
     };
   }
   if (kind === 'vitals') {
@@ -305,12 +309,69 @@ class FrameCollector {
   }
 }
 
+/** Average a frame's per-subcarrier amplitudes into `bins` equal groups. */
+export function binAmplitudes(amplitudes, bins) {
+  const n = amplitudes.length;
+  const b = Math.max(1, Math.min(bins, n));
+  const out = new Array(b);
+  for (let i = 0; i < b; i++) {
+    const start = Math.floor((i * n) / b);
+    const end = Math.max(start + 1, Math.floor(((i + 1) * n) / b));
+    let sum = 0;
+    for (let k = start; k < end; k++) sum += amplitudes[k];
+    out[i] = Math.round((sum / (end - start)) * 10) / 10;
+  }
+  return out;
+}
+
+/**
+ * The most recent amplitude frames per node, binned, for a waterfall view
+ * (ADR-378). A ring buffer: unlike the analyzer's collector it keeps the
+ * newest frames. Each node reports its dominant CSI shape only.
+ */
+export class SpectrumCollector {
+  constructor(frames, bins, maxNodes = 8) { this.frames = frames; this.bins = bins; this.maxNodes = maxNodes; this.byKey = new Map(); }
+  add(pkt, t) {
+    const amplitudes = pkt.amplitudes ?? pkt.chain0Amplitudes;
+    if (pkt.kind !== 'csi' || !amplitudes) return;
+    const key = `${pkt.source}:${pkt.nodeId}|${shapeKey(pkt)}`;
+    let c = this.byKey.get(key);
+    if (!c) {
+      if (this.byKey.size >= this.maxNodes * 4) return;
+      c = { source: pkt.source, nodeId: pkt.nodeId, shape: shapeKey(pkt), subcarriers: pkt.subcarriers, rows: [], count: 0, first: t, last: t, synthetic: false };
+      this.byKey.set(key, c);
+    }
+    c.rows.push(binAmplitudes(amplitudes, this.bins));
+    if (c.rows.length > this.frames) c.rows.shift();
+    c.count += 1;
+    c.last = t;
+    c.synthetic ||= Boolean(pkt.synthetic);
+  }
+  result() {
+    const best = new Map();
+    for (const c of this.byKey.values()) {
+      const node = `${c.source}:${c.nodeId}`;
+      if (!best.has(node) || best.get(node).count < c.count) best.set(node, c);
+    }
+    return [...best.values()]
+      .sort((a, b) => (a.source === b.source ? a.nodeId - b.nodeId : a.source.localeCompare(b.source)))
+      .slice(0, this.maxNodes)
+      .map((c) => ({
+        source: c.source, nodeId: c.nodeId, shape: c.shape, subcarriers: c.subcarriers, bins: c.rows[0]?.length ?? 0,
+        frames: c.rows, framesSeen: c.count,
+        rateHz: c.last > c.first ? Number((((c.count - 1) * 1000) / (c.last - c.first)).toFixed(2)) : null,
+        synthetic: c.synthetic,
+      }));
+  }
+}
+
 const BIND_HOSTS = new Set(['0.0.0.0', '127.0.0.1', '::', '::1']);
 const NODE_PACKETS = (summary) => summary.nodes.reduce((a, n) => a + Object.values(n.packets).reduce((x, y) => x + y, 0), 0);
 
 /**
  * Listen for node packets. args: { udp_port=5005, bind='0.0.0.0', seconds=10, max_packets=200000,
- * analyze=false, node_id, analyze_max_frames=6000 }. deps.createSocket is injectable for tests;
+ * analyze=false, node_id, analyze_max_frames=6000, spectrum=false, spectrum_bins=48, spectrum_frames=64 }.
+ * deps.createSocket is injectable for tests;
  * deps.analyze(frames, config) runs the compute kernel when args.analyze is set.
  */
 export function captureEsp32(args = {}, deps = {}) {
@@ -320,6 +381,9 @@ export function captureEsp32(args = {}, deps = {}) {
   const maxPackets = Math.min(args.max_packets ?? 200_000, 1_000_000);
   const analyze = Boolean(args.analyze);
   const maxFrames = Math.min(Math.max(args.analyze_max_frames ?? 6000, 64), 20_000);
+  const spectrum = Boolean(args.spectrum);
+  const spectrumBins = Math.min(Math.max(Math.round(args.spectrum_bins ?? 48), 8), 128);
+  const spectrumFrames = Math.min(Math.max(Math.round(args.spectrum_frames ?? 64), 8), 256);
   if (!Number.isInteger(port) || port < 1024 || port > 65535) return Promise.resolve({ ok: false, reason: 'invalid_port', detail: 'udp_port must be an integer in 1024..65535' });
   if (!BIND_HOSTS.has(bind)) return Promise.resolve({ ok: false, reason: 'invalid_bind', detail: `bind must be one of ${[...BIND_HOSTS].join(', ')}` });
   if (args.node_id !== undefined && (!Number.isInteger(args.node_id) || args.node_id < 0 || args.node_id > 255)) return Promise.resolve({ ok: false, reason: 'invalid_node_id', detail: 'node_id must be an integer in 0..255' });
@@ -327,7 +391,8 @@ export function captureEsp32(args = {}, deps = {}) {
   const createSocket = deps.createSocket || ((type) => dgram.createSocket({ type, reuseAddr: false }));
   const stats = new NodeStats();
   const collector = analyze ? new FrameCollector(maxFrames) : null;
-  const parseOpts = { iq: analyze };
+  const spectra = spectrum ? new SpectrumCollector(spectrumFrames, spectrumBins) : null;
+  const parseOpts = { iq: analyze || spectrum, firstChain: spectrum };
   let packets = 0;
   return new Promise((resolve) => {
     const socket = createSocket(bind.includes(':') ? 'udp6' : 'udp4');
@@ -345,7 +410,7 @@ export function captureEsp32(args = {}, deps = {}) {
       if (packets === 0) {
         failure = { reason: 'no_packets', remedy: `No node packets reached ${bind}:${port}. Check the node's target IP/port (provision.py --target-ip/--target-port), that this host is on the same network, and the firewall (UDP ${port}).` };
       } else if (NODE_PACKETS(summary) === 0 && !summary.meshMessages && summary.heartbeats > 0) {
-        failure = { reason: 'heartbeat_only', remedy: 'Realtek nodes are alive (RHB1 heartbeats) but no RAC1 CSI arrived. Reset the board; if it persists, check its serial log at 1500000 baud for csi_sequence and reduce channel contention (ADR-323).' };
+        failure = { reason: 'heartbeat_only', remedy: 'Realtek nodes are alive (RHB1 heartbeats) but no RAC1 CSI arrived. Run `ruview monitor --port <p> --baud 1500000`: "lack of csi buf" lines mean CSI report-buffer starvation in the firmware (reset the board); otherwise check csi_sequence and channel contention (ADR-323).' };
       } else if (decoded === 0) {
         failure = { reason: 'no_decodable_packets', remedy: 'Packets arrived but none matched a known RuView format (see unknownMagics). Check the sender and firmware version.' };
       }
@@ -356,6 +421,7 @@ export function captureEsp32(args = {}, deps = {}) {
         evidence: failure ? null : 'MEASURED: live UDP packets received and decoded on this host',
         ...extra,
       };
+      if (spectra && !failure) result.spectrum = spectra.result();
       if (collector && !failure) result.analysis = await runAnalysis(collector, args.node_id, deps.analyze);
       resolve(result);
     };
@@ -372,7 +438,11 @@ export function captureEsp32(args = {}, deps = {}) {
       packets += 1;
       const pkt = parsePacket(msg, parseOpts);
       stats.add(pkt, rinfo?.address);
-      if (collector) collector.add(pkt, performance.now());
+      if (collector || spectra) {
+        const t = performance.now();
+        if (collector) collector.add(pkt, t);
+        if (spectra) spectra.add(pkt, t);
+      }
       if (packets >= maxPackets) finish({ truncated: true });
     });
     socket.bind(port, bind, () => { timer = setTimeout(() => finish(), seconds * 1000); });

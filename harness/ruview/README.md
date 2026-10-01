@@ -242,6 +242,78 @@ The bundled `.claude/settings.json` registers the `ruview` MCP server
 (`npx -y @ruvnet/ruview mcp start`). Drop this package's `.claude/` into a repo, or run
 `npx @ruvnet/ruview install --host claude-code`.
 
+## Claude Code mod: live sensing pane (ADR-377)
+
+This package ships **`ruview-live`**, a Claude Code mod: a plugin whose behaviour is a function-hooks module. `/ruview` opens a pane beside the transcript, refreshed on a timer, with:
+- your CSI nodes (ESP32, Realtek): rate, loss, RSSI and CSI shape;
+- an optional ESPHome radar kit: presence, distance, and device-reported heart/breathing;
+- alerts, such as a board that sends heartbeats but no CSI.
+
+It also keeps a one-line status: `RuView · 2 nodes · radar present · 1 alert`.
+
+**Showcase views (ADR-378).** The pane has three views, switched with keys `1`, `2` and `3`. The two live views are drawn in terminal cells (24-bit colour) and animated in place:
+
+| Key | View | What you see |
+|---|---|---|
+| `1` | Overview | the cards above |
+| `2` | CSI waterfall | per-subcarrier amplitude over time (`esp32 --spectrum`), replayed at the frames' arrival rate and labelled **MEASURED** or **SYNTHETIC** from the packets' own flag; `n` cycles nodes |
+| `3` | Radar | a 120° range fan with a sonar ping out to the measured distance; heart and breathing charts, and a ♥ and breathing gauge that pulse at the device-reported rates (a metronome, not a waveform) |
+
+The radar kit reports range, not bearing, so the arc covers every bearing at that range. Desktop and IDE surfaces show the overview, and a note in the live views.
+
+```bash
+npx @ruvnet/ruview mod                    # where the mod is in this install, and how to load it
+claude --plugin-dir "<path printed above>"   # try it for one session
+# or from the RuView marketplace:
+#   /plugin marketplace add ruvnet/RuView
+#   /plugin install ruview-live@ruview
+```
+
+In Claude Code:
+
+| Command | What it does |
+|---|---|
+| `/ruview` | Open or close the pane |
+| `/ruview refresh` | Run one capture now; the result goes in the status line |
+| `/ruview off` | Close the pane |
+| `/ruview waterfall`, `/ruview radar` | Open the pane on that view |
+
+**Settings** (`claude plugin configure ruview-live`):
+- `udpPort` (default 5005);
+- `radarHost`, an ESPHome kit on your private network;
+- `refreshSeconds` (default 15, minimum 5);
+- `liveRefreshSeconds` for the waterfall and radar views (default 4, range 2–60);
+- `captureSeconds` (default 3).
+
+**How it reads:**
+- The mod only runs this package's CLI, for read-only `esp32` and `mmwave --source esphome` captures, with `--json`, so the pane shows exactly what those tools return.
+- It never flashes, provisions or writes to a device.
+- Like every mod, it runs inside Claude Code with Claude Code's access, so install it only from a source you trust.
+
+Mods are early access in Claude Code. If `/ruview` is missing, start Claude Code with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+
+## ChatGPT and MCP Apps (ADR-375)
+
+`ruview_esp32_capture`, `ruview_devices_scan` and `ruview_doctor` render in a
+self-contained console widget (`ui://ruview/console-v1.html`) in ChatGPT and
+other MCP Apps hosts, with a Refresh button that re-runs the tool. Results also
+carry `structuredContent`.
+
+```bash
+# MCP over HTTP: loopback, token-authenticated, read tools only
+export RUVIEW_MCP_TOKEN="$(node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))")"
+RUVIEW_MCP_GRANTS=device-access npx @ruvnet/ruview mcp start --http --port 8790
+```
+
+Clients that can send headers use `Authorization: Bearer <token>` on
+`http://127.0.0.1:8790/mcp`. ChatGPT connectors cannot, so expose the port over
+HTTPS (a tunnel or reverse proxy) and add `https://<host>/mcp/<token>` as the
+connector URL. Write grants (`hardware-write`, `workspace-write`) are never
+honoured over HTTP: flashing and calibration stay on the CLI and stdio.
+
+In a terminal, commands print a formatted view; pipes and `--json` print JSON.
+`ruview esp32 --watch` redraws live capture windows with per-node trends.
+
 ## Hosts
 
 Claude Code and Codex are implemented directly and tested with the local,

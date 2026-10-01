@@ -23,13 +23,15 @@ import { fileURLToPath as toPath } from 'node:url';
 import { searchBrain } from './brain.js';
 import { getGuidance, GUIDANCE_TOPICS } from './guidance.js';
 import { listCognitumSpaces } from './spaces.js';
-import { KERNEL_BACKENDS, kernelAnalyzer, kernelSelfTest } from './kernel.js';
+import { importKernelPackage, KERNEL_BACKENDS, KERNEL_PACKAGE, kernelAnalyzer, kernelSelfTest } from './kernel.js';
 import { execTool } from './exec.js';
 import { BAUD_RATES, FIRMWARE_VARIANTS, flashFirmware, listSerialPorts } from './firmware.js';
 import { SPLITS, TRAIN_MODES, runTraining, trainingGate } from './training.js';
 import { DOCTOR_GROUPS, runDoctor } from './doctor.js';
+import { UI_TOOLS, uiToolMeta } from './ui/console-widget.js';
 import { scanDevices } from './devices/registry.js';
 import { captureEsp32 } from './devices/esp32.js';
+import { readEsphome } from './devices/esphome.js';
 import { MMWAVE_MODELS, readMmwave } from './devices/mmwave.js';
 import { readIphoneLidar, readRplidar } from './devices/lidar.js';
 import { loadHosts, runRemote } from './remote.js';
@@ -87,7 +89,8 @@ export const OPERATOR_DEPS = Object.freeze({
   which,
   findRepoRoot,
   python: findPython,
-  importer: (specifier) => import(specifier),
+  // The kernel goes through kernel.js so an embedding package's importer applies (ADR-376).
+  importer: (specifier) => (specifier === KERNEL_PACKAGE ? importKernelPackage() : import(specifier)),
   fetch: (...a) => globalThis.fetch(...a),
 });
 
@@ -146,7 +149,7 @@ const ONBOARD_PATHS = {
 
 // Read-only serial monitor script; the port arrives via sys.argv (ADR-263 O5 —
 // never spliced into interpreter source).
-const MONITOR_SCRIPT = [
+export const MONITOR_SCRIPT = [
   'import sys,time',
   'try:',
   ' import serial',
@@ -161,7 +164,7 @@ const MONITOR_SCRIPT = [
   'ser.port=port; ser.baudrate=baud; ser.timeout=1',
   'ser.dtr=False; ser.rts=False',
   'ser.open()',
-  'csi=0; n=0; t=time.time()',
+  'csi=0; n=0; starved=0; t=time.time()',
   'while time.time()-t<dur:',
   ' ln=ser.readline()',
   ' if not ln: continue',
@@ -169,8 +172,9 @@ const MONITOR_SCRIPT = [
   ' n+=1',
   " if 'CSI cb' in s or 'csi_collector' in s or 'RUVIEW_CSI: frame #' in s: csi+=1",
   " if 'MGMT+DATA' in s: print('UPGRADE_MGMT_DATA')",
+  " if 'lack of csi buf' in s or 'csi buf not enough' in s: starved+=1",
   'ser.close()',
-  "print(f'LINES={n} CSI={csi}')",
+  "print(f'LINES={n} CSI={csi} STARVED={starved}')",
 ].join('\n');
 
 /**
@@ -263,9 +267,14 @@ export const TOOLS = {
       if (!r.ok) return { ok: false, reason: 'port_error', stderr: r.stderr, error: r.error };
       const csi = Number((r.stdout.match(/CSI=(\d+)/) || [])[1] || 0);
       const lines = Number((r.stdout.match(/LINES=(\d+)/) || [])[1] || 0);
+      const starved = Number((r.stdout.match(/STARVED=(\d+)/) || [])[1] || 0);
       const upgraded = r.stdout.includes('UPGRADE_MGMT_DATA');
-      const out = { ok: csi > 0, csi_callbacks: csi, lines, baud, mgmt_data_upgrade: upgraded, reset_on_open: false, raw: r.stdout.trim() };
-      if (csi === 0) {
+      const out = { ok: csi > 0 && starved === 0, csi_callbacks: csi, lines, baud, mgmt_data_upgrade: upgraded, reset_on_open: false, raw: r.stdout.trim() };
+      if (starved) {
+        out.csi_buffer_starved = starved;
+        out.reason = 'csi_buffer_starvation';
+        out.hint = `${starved} 'lack of csi buf' lines: the radio is generating CSI reports but the firmware is not returning report buffers, so CSI stops while heartbeats continue (heartbeat-only on UDP). Reset the node now; the lasting fix is in the firmware's CSI report handling (buffer release/drain rate vs. CSI_REPORT_BUF_NUM).`;
+      } else if (csi === 0) {
         out.hint = lines === 0
           ? 'No console output on this port. ESP32-C6/S3 builds with CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG log on the native USB port (303A:1001), not the UART bridge: attach that port, or confirm CSI over the network with `ruview esp32 --seconds 10`. Realtek Ameba boards log at --baud 1500000.'
           : 'Console output but no CSI log lines in the window. CSI logs are rate-limited (ESP32: first 3, then every 100th callback); lengthen --seconds or confirm over the network with `ruview esp32 --seconds 10`.';
@@ -505,6 +514,9 @@ export const TOOLS = {
         node_id: { type: 'number', minimum: 0, maximum: 255, description: 'Node to analyze. Default: the node with the most CSI frames.' },
         backend: { type: 'string', enum: [...KERNEL_BACKENDS], description: 'Kernel backend for analyze. Default wasm.' },
         analyze_max_frames: { type: 'number', minimum: 64, maximum: 20000, description: 'Frame cap for analyze. Default 6000.' },
+        spectrum: { type: 'boolean', description: 'Also return the newest per-node amplitude frames, binned, for a waterfall view (ADR-378).' },
+        spectrum_bins: { type: 'number', minimum: 8, maximum: 128, description: 'Subcarrier bins per frame. Default 48.' },
+        spectrum_frames: { type: 'number', minimum: 8, maximum: 256, description: 'Newest frames kept per node. Default 64.' },
       },
     },
     handler(args = {}) {
@@ -514,18 +526,27 @@ export const TOOLS = {
 
   ruview_mmwave_read: {
     title: 'Read mmWave radar',
-    description: 'Read a Seeed MR60BHA2 (60 GHz) or HLK-LD2410 (24 GHz) radar over USB-UART with firmware-identical frame/checksum parsing; auto-detects by baud and valid frames. Returns frame rates, checksum errors, presence, distance, and device-reported breathing/heart values. MCP requires device-access.',
+    description: 'Read a 60 GHz Seeed MR60BHA2 or 24 GHz HLK-LD2410 radar. source=serial (default): raw USB-UART frames with firmware-identical checksum parsing, auto-detected by baud. source=esphome: a radar kit running ESPHome (e.g. the Seeed MR60BHA2 kit) over its native API on a private-network host, read-only. Returns presence, distance and device-reported breathing/heart values. MCP requires device-access.',
     inputSchema: {
       type: 'object',
-      required: ['port'],
       properties: {
-        port: { type: 'string', minLength: 3, maxLength: 80, pattern: SERIAL_PORT_PATTERN },
-        model: { type: 'string', enum: ['auto', ...Object.keys(MMWAVE_MODELS)], description: 'Default auto.' },
+        source: { type: 'string', enum: ['serial', 'esphome'], description: 'Default serial.' },
+        port: { type: 'string', minLength: 3, maxLength: 80, pattern: SERIAL_PORT_PATTERN, description: 'Serial port (source=serial).' },
+        model: { type: 'string', enum: ['auto', ...Object.keys(MMWAVE_MODELS)], description: 'Default auto (source=serial).' },
+        host: { type: 'string', minLength: 1, maxLength: 253, description: 'ESPHome device IP or hostname on a private network (source=esphome).' },
+        api_port: { type: 'number', minimum: 1, maximum: 65535, description: 'ESPHome API port. Default 6053.' },
         seconds: { type: 'number', minimum: 1, maximum: 120, description: 'Default 10.' },
       },
     },
     handler(args = {}) {
-      return readMmwave(args, OPERATOR_DEPS);
+      if (args.source === 'esphome') {
+        if (!args.host) return { ok: false, reason: 'invalid_arguments', errors: ['$.host is required for source=esphome'] };
+        const { source, port, model, ...rest } = args;
+        return readEsphome(rest);
+      }
+      if (!args.port) return { ok: false, reason: 'invalid_arguments', errors: ['$.port is required for source=serial'] };
+      const { source, host, api_port: apiPort, ...rest } = args;
+      return readMmwave(rest, OPERATOR_DEPS);
     },
   },
 
@@ -652,9 +673,11 @@ export async function runTool(name, args, context = {}) {
   }
 }
 
-/** MCP-shaped tool list: [{name, description, inputSchema}]. */
+/** MCP-shaped tool list: name, title, schema, annotations, and ui:// metadata for UI tools (ADR-375). */
 export function listTools() {
   return Object.entries(TOOLS).map(([name, t]) => ({
-    name, description: t.description, inputSchema: t.inputSchema, annotations: mcpAnnotations(name),
+    name, ...(t.title ? { title: t.title } : {}), description: t.description, inputSchema: t.inputSchema,
+    annotations: { ...(t.title ? { title: t.title } : {}), ...mcpAnnotations(name) },
+    ...(UI_TOOLS.includes(name) ? { _meta: uiToolMeta() } : {}),
   }));
 }

@@ -189,6 +189,48 @@ counter reset, and lets a late packet fill its own gap. Against ground truth
 (unique sequence numbers over the span, 15 s): 4,783/4,783 present, true loss
 0, 9 strays — the tracker reported loss 0 and 9 strays.
 
+## Amendment 3 (2026-10-01): ESPHome radar kits and CSI buffer starvation
+
+- **ESPHome source for radar.** The Seeed MR60BHA2 kit (a XIAO ESP32-C6 with
+  the 60 GHz radar) runs ESPHome, which owns the radar UART. Raw frames never
+  reach USB, so `mmwave --model auto` correctly returned `no_valid_frames`.
+  `ruview_mmwave_read` now takes `source: "esphome"` with a `host`.
+  - **Client:** a dependency-free, read-only client for the plaintext ESPHome
+    native API (TCP 6053) runs hello → connect → device info → list entities
+    → subscribe states for a bounded window. It never sends a command.
+  - **Roles:** presence, heart, breathing, distance and target count are
+    found by entity name. The result uses the same summary fields as the
+    serial path.
+  - **Decoding:** ESPHome's `missing_state` flag and proto3 zero defaults are
+    honoured, so absent readings are excluded rather than averaged as 0.
+  - **Address policy:** hosts must resolve to private, link-local, CGNAT
+    (Tailscale) or loopback addresses.
+  - **Unsupported cases:** encrypted (Noise) and password-protected APIs are
+    reported as unsupported.
+- **Live kit (MEASURED, 192.168.1.102, ESPHome 2026.9.0, project
+  `seeedstudio.mr60bha2_kit` `spaces-1.0`).**
+  - The kit had been configured for an out-of-range SSID. It was moved to
+    the operator's network through its own captive portal, without
+    reflashing.
+  - A 15 s read returned 154 state updates:
+    - presence: detected, 1 target;
+    - mean distance: 40.0 cm;
+    - device-reported heart rate: mean 75.3 bpm;
+    - device-reported breathing rate: mean 10.7 bpm.
+  - These are firmware-computed values, not validated against a reference.
+- **Realtek heartbeat-only stall: root cause.** Reading the stalled board's
+  console without a reset showed continuous `[WLAN-W] lack of csi buf!` /
+  `csi buf not enough`.
+  - The radio produces CSI reports, but the firmware does not return report
+    buffers, so CSI stops while heartbeats continue.
+  - `ruview monitor` now counts these lines and fails with
+    `csi_buffer_starvation`. Observed live: 399 lines in 8 s, 0 CSI.
+  - The lasting fix belongs in the RTL8721Dx firmware (outside this
+    repository).
+- **Views.** Radar results render in the terminal UI and in the console
+  widget (`ruview_mmwave_read` is now a UI tool). Both label vitals
+  "device-reported, not validated".
+
 ## Consequences
 
 - One command per modality works across CLI, MCP and SDK, with actionable

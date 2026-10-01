@@ -1,10 +1,10 @@
 {
   "name": "@ruvnet/ruview",
-  "version": "0.7.0",
+  "version": "0.9.1",
   "description": "RuView WiFi-sensing operator harness \u2014 CLI, MCP server, and SDK for host device access (ESP32 CSI nodes, 60/24 GHz mmWave, LiDAR), SSH remote hosts, diagnostics, verified ESP32 flashing, evidence-gated training, calibration, and Cognitum Spaces.",
   "type": "module",
   "bin": {
-    "ruview": "bin/cli.js"
+    "ruview-harness": "bin/cli.js"
   },
   "exports": {
     ".": "./src/tools.js",
@@ -20,7 +20,14 @@
     "./firmware": "./src/firmware.js",
     "./training": "./src/training.js",
     "./devices": "./src/devices/registry.js",
-    "./remote": "./src/remote.js"
+    "./remote": "./src/remote.js",
+    "./cli": "./src/cli.js",
+    "./cli-ui": "./src/cli-ui.js",
+    "./mcp": "./src/mcp-server.js",
+    "./mcp-http": "./src/mcp-http.js",
+    "./ui": "./src/ui/console-widget.js",
+    "./esphome": "./src/devices/esphome.js",
+    "./kernel": "./src/kernel.js"
   },
   "files": [
     "bin/",
@@ -32,13 +39,15 @@
     "brain/",
     "flywheel/",
     "scripts/",
+    "mod/.claude-plugin/",
+    "mod/hooks/",
     "CLAUDE.md",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "test:security": "node --test test/hosts.test.mjs test/brain.test.mjs test/policy.test.mjs test/spaces.test.mjs test/kernel.test.mjs test/firmware.test.mjs test/training.test.mjs test/devices.test.mjs test/csi-nodes.test.mjs test/remote.test.mjs",
+    "test:security": "node --test test/hosts.test.mjs test/brain.test.mjs test/policy.test.mjs test/spaces.test.mjs test/kernel.test.mjs test/firmware.test.mjs test/training.test.mjs test/devices.test.mjs test/csi-nodes.test.mjs test/remote.test.mjs test/mcp-apps.test.mjs test/cli-ui.test.mjs test/esphome.test.mjs",
     "doctor": "node ./bin/cli.js doctor",
     "mcp": "node ./bin/cli.js mcp start",
     "brain:verify": "node ./bin/cli.js brain verify",
@@ -79,6 +88,14 @@
     "ld2410",
     "ssh"
   ],
+  "peerDependencies": {
+    "@ruvnet/ruview-kernel": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@ruvnet/ruview-kernel": {
+      "optional": true
+    }
+  },
   "engines": {
     "node": ">=20.0.0"
   },

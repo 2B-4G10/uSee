@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { kernelSelfTest, KERNEL_PACKAGE } from '../src/kernel.js';
+import { importKernelPackage, kernelSelfTest, KERNEL_PACKAGE, setKernelImporter } from '../src/kernel.js';
 import { authorizeTool } from '../src/policy.js';
 import { runTool } from '../src/tools.js';
 
@@ -57,4 +57,18 @@ test('installed kernel passes its SYNTHETIC self-test through the harness tool',
   assert.equal(result.backend, 'wasm');
   assert.equal(result.evidence, 'SYNTHETIC');
   assert.equal(result.integrity, 'verified');
+});
+
+test('an embedding package can supply the kernel importer (ADR-376)', async () => {
+  const seen = [];
+  setKernelImporter(async (specifier) => { seen.push(specifier); return { loadKernel: () => { throw Object.assign(new Error('stub'), { code: 'backend_unavailable' }); }, selfTest: () => ({}) }; });
+  try {
+    await importKernelPackage();
+    const r = await kernelSelfTest({ backend: 'wasm' });
+    assert.deepEqual(seen, [KERNEL_PACKAGE, KERNEL_PACKAGE]);
+    assert.equal(r.reason, 'backend_unavailable');
+    assert.throws(() => setKernelImporter('not a function'), /importer must be a function/);
+  } finally {
+    setKernelImporter((specifier) => import(specifier));
+  }
 });
