@@ -242,6 +242,44 @@ The bundled `.claude/settings.json` registers the `ruview` MCP server
 (`npx -y @ruvnet/ruview mcp start`). Drop this package's `.claude/` into a repo, or run
 `npx @ruvnet/ruview install --host claude-code`.
 
+## Claude Code mod: live sensing pane (ADR-377)
+
+This package ships **`ruview-live`**, a Claude Code mod: a plugin whose behaviour is a function-hooks module. `/ruview` opens a pane beside the transcript, refreshed on a timer, with:
+- your CSI nodes (ESP32, Realtek): rate, loss, RSSI and CSI shape;
+- an optional ESPHome radar kit: presence, distance, and device-reported heart/breathing;
+- alerts, such as a board that sends heartbeats but no CSI.
+
+It also keeps a one-line status: `RuView · 2 nodes · radar present · 1 alert`.
+
+```bash
+npx @ruvnet/ruview mod                    # where the mod is in this install, and how to load it
+claude --plugin-dir "<path printed above>"   # try it for one session
+# or from the RuView marketplace:
+#   /plugin marketplace add ruvnet/RuView
+#   /plugin install ruview-live@ruview
+```
+
+In Claude Code:
+
+| Command | What it does |
+|---|---|
+| `/ruview` | Open or close the pane |
+| `/ruview refresh` | Run one capture now; the result goes in the status line |
+| `/ruview off` | Close the pane |
+
+**Settings** (`claude plugin configure ruview-live`):
+- `udpPort` (default 5005);
+- `radarHost`, an ESPHome kit on your private network;
+- `refreshSeconds` (default 15, minimum 5);
+- `captureSeconds` (default 3).
+
+**How it reads:**
+- The mod only runs this package's CLI, for read-only `esp32` and `mmwave --source esphome` captures, with `--json`, so the pane shows exactly what those tools return.
+- It never flashes, provisions or writes to a device.
+- Like every mod, it runs inside Claude Code with Claude Code's access, so install it only from a source you trust.
+
+Mods are early access in Claude Code. If `/ruview` is missing, start Claude Code with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+
 ## ChatGPT and MCP Apps (ADR-375)
 
 `ruview_esp32_capture`, `ruview_devices_scan` and `ruview_doctor` render in a

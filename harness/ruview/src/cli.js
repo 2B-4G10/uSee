@@ -201,6 +201,7 @@ Harness:
                          structured diagnostics with fixes (ADR-372)
   skills                 list bundled skills
   skill <name>           print a skill playbook
+  mod [--json]           where the ruview-live Claude Code mod is, and how to load it (ADR-377)
   mcp start              run the ruview.* MCP server (stdio)
   mcp start --http [--host 127.0.0.1] [--port 8790] [--allow-origin URL]
                          MCP over HTTP for ChatGPT and remote clients (ADR-375);
@@ -291,6 +292,23 @@ export async function run(args, opts = {}) {
       return 0;
     }
     case 'mcp': return mcp(rest, flags, opts.mcpHandler);
+    case 'mod': {
+      // The ruview-live Claude Code mod ships inside this package (ADR-377).
+      const dir = join(ROOT, 'mod');
+      const info = {
+        ok: existsSync(join(dir, '.claude-plugin', 'plugin.json')),
+        plugin: 'ruview-live',
+        path: dir,
+        run: `claude --plugin-dir "${dir}"`,
+        marketplace: ['/plugin marketplace add ruvnet/RuView', '/plugin install ruview-live@ruview'],
+        usage: ['/ruview            open or close the live pane', '/ruview refresh    one capture now, result in the status line', '/ruview off        close the pane'],
+        configure: 'claude plugin configure ruview-live   (udpPort, radarHost, refreshSeconds, captureSeconds)',
+        note: 'Mods are early access in Claude Code. If /ruview is missing, start Claude Code with CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1.',
+      };
+      if (flags.json === true || !process.stdout.isTTY) pjson(info);
+      else console.log([`ruview-live mod: ${info.path}`, `  try it:   ${info.run}`, `  install:  ${info.marketplace.join('  then  ')}`, ...info.usage.map((u) => `  ${u}`), `  ${info.configure}`, `  ${info.note}`].join('\n'));
+      return info.ok ? 0 : 1;
+    }
     case 'agent': {
       if (rest[0] !== 'run') { console.error('Usage: ruview agent run --host claude-code|codex --prompt "..." [--repo <dir>]'); return 2; }
       const [{ findRepoRoot }, { getHost }] = await Promise.all([tools(), import('./hosts/index.js')]);

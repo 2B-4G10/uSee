@@ -44,6 +44,8 @@ npx ruview kernel selftest
 
 A terminal gets a formatted view; pipes and `--json` get JSON.
 
+In **Claude Code**, the bundled `ruview-live` mod puts a live sensing pane beside the conversation (`/ruview`). Run `npx ruview mod` to see how to load it (mods are early access).
+
 ## Agents: MCP, ChatGPT and MCP Apps
 
 One server exposes the harness tools (`ruview_*`) and the Homecore tools

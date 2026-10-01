@@ -1,6 +1,6 @@
 {
   "name": "@ruvnet/ruview",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "RuView WiFi-sensing operator harness \u2014 CLI, MCP server, and SDK for host device access (ESP32 CSI nodes, 60/24 GHz mmWave, LiDAR), SSH remote hosts, diagnostics, verified ESP32 flashing, evidence-gated training, calibration, and Cognitum Spaces.",
   "type": "module",
   "bin": {
@@ -39,6 +39,8 @@
     "brain/",
     "flywheel/",
     "scripts/",
+    "mod/.claude-plugin/",
+    "mod/hooks/",
     "CLAUDE.md",
     "README.md",
     "LICENSE"
