@@ -78,7 +78,9 @@ reach your USB ports; use a local session or an SSH host.
 
 ```bash
 npx @ruvnet/ruview devices                                   # classify USB serial devices by VID:PID
-npx @ruvnet/ruview esp32 --seconds 10                         # ESP32 node UDP stream (default :5005)
+npx @ruvnet/ruview esp32 --seconds 10                         # ESP32 / Realtek RAC1 node UDP stream (default :5005)
+npx @ruvnet/ruview esp32 --seconds 45 --analyze               # ...and run live CSI through @ruvnet/ruview-kernel
+npx @ruvnet/ruview monitor --port COM10 --baud 1500000        # serial console without resetting the node
 npx @ruvnet/ruview mmwave --port /dev/ttyUSB0                 # MR60BHA2 60 GHz / LD2410 24 GHz, auto-detected
 npx @ruvnet/ruview lidar --source rplidar --port /dev/ttyUSB1 # RPLIDAR scan summary
 RUVIEW_LIDAR_TOKEN=… npx @ruvnet/ruview lidar --source iphone --url ws://HOST:8787/ws/lidar

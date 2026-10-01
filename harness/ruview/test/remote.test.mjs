@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildSshArgs, runRemote, saveHost, shellQuote, validateHost } from '../src/remote.js';
+import { buildSshArgs, restrictToOwner, runRemote, saveHost, shellQuote, validateHost } from '../src/remote.js';
 import { isRemoteReadOnlyTool, runTool, TOOLS } from '../src/tools.js';
 import { validateArguments } from '../src/policy.js';
 
@@ -48,8 +48,18 @@ const baseDeps = (path, execResult) => {
 
 test('hosts file is private and remote runs are read-only, validated, and version-pinned', async () => {
   await withHosts(async (path) => {
-    saveHost({ name: 'pi', ssh: 'ruv@pi.local' }, path);
-    assert.equal(statSync(path).mode & 0o777, 0o600);
+    const saved = saveHost({ name: 'pi', ssh: 'ruv@pi.local' }, path);
+    if (process.platform === 'win32') {
+      // POSIX modes are ignored on Windows; privacy comes from an owner-only ACL.
+      assert.equal(saved.access, 'windows-acl-owner-only');
+      const acl = spawnSync('icacls', [path], { encoding: 'utf8' }).stdout;
+      const grants = acl.split('\n').map((l) => l.replace(path, '').trim()).filter((l) => /:\(/.test(l));
+      assert.equal(grants.length, 1, acl);
+      assert.match(grants[0], /:\(F\)$/);
+    } else {
+      assert.equal(saved.access, 'posix-0600');
+      assert.equal(statSync(path).mode & 0o777, 0o600);
+    }
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).hosts[0].name, 'pi');
 
     const ok = baseDeps(path, { ok: true, code: 0, stdout: JSON.stringify({ ok: true, devices: [] }), stderr: '', error: null });
@@ -89,4 +99,13 @@ test('`call --read-only` refuses mutating tools (what remote hosts execute)', ()
   assert.equal(JSON.parse(refused.stdout).reason, 'remote_tool_not_allowed');
   const allowed = spawnSync(process.execPath, [cli, 'call', 'ruview_train_gate', '--read-only', '--args-json', '{"model_score":0.6}'], { encoding: 'utf8' });
   assert.equal(JSON.parse(allowed.stdout).verdict, 'FAIL');
+});
+
+test('Windows hosts-file restriction fails closed when icacls fails', () => {
+  const calls = [];
+  const ok = restrictToOwner('C:/x/hosts.json', { platform: 'win32', user: () => 'alice', exec: (cmd, args) => { calls.push([cmd, ...args]); return { status: 0 }; } });
+  assert.equal(ok, 'windows-acl-owner-only');
+  assert.deepEqual(calls[0], ['icacls', 'C:/x/hosts.json', '/inheritance:r', '/grant:r', 'alice:F']);
+  assert.throws(() => restrictToOwner('C:/x/hosts.json', { platform: 'win32', user: () => 'alice', exec: () => ({ status: 5 }) }), /not made private/);
+  assert.equal(restrictToOwner('/tmp/h.json', { platform: 'linux', exec: () => { throw new Error('must not run'); } }), 'posix-0600');
 });

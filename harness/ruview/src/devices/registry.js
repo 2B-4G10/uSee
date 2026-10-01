@@ -2,7 +2,8 @@
 // Device discovery (ADR-373): enumerate serial ports and classify them by USB
 // VID:PID into likely RuView roles. Classification is a hint, not identity —
 // many boards share generic USB-UART bridges, so each candidate lists the
-// read command that confirms it.
+// read command that confirms it. `realtek` marks RTL8721Dx (Ameba) CSI boards
+// (ADR-323), which stream RAC1 over UDP and log at 1500000 baud.
 
 import { listSerialPorts } from '../firmware.js';
 
@@ -16,6 +17,8 @@ export const USB_IDS = Object.freeze({
   '1A86:55D3': { chip: 'WCH CH343', roles: ['esp32', 'mmwave'] },
   '0403:6001': { chip: 'FTDI FT232R', roles: ['mmwave', 'rplidar', 'esp32'] },
   '0403:6015': { chip: 'FTDI FT231X', roles: ['mmwave', 'esp32'] },
+  '067B:23A3': { chip: 'Prolific PL2303GC (Realtek Ameba RTL8721Dx boards)', roles: ['realtek'] },
+  '067B:2303': { chip: 'Prolific PL2303', roles: ['realtek', 'esp32'] },
   '2341:0043': { chip: 'Arduino Uno', roles: [] },
 });
 
@@ -23,6 +26,7 @@ const NEXT = Object.freeze({
   esp32: (p) => `ruview doctor --port ${p} --probe   |   ruview monitor --port ${p}`,
   mmwave: (p) => `ruview mmwave --port ${p} --model auto`,
   rplidar: (p) => `ruview lidar --source rplidar --port ${p}`,
+  realtek: (p) => `ruview monitor --port ${p} --baud 1500000   |   ruview esp32 --seconds 10  (RAC1 over UDP)`,
 });
 
 export function classifyPort(port) {
@@ -56,6 +60,6 @@ export async function scanDevices(deps) {
       esp32Udp: 'ESP32 nodes stream UDP to their provisioned target; run `ruview esp32 --seconds 10` on that host (default UDP 5005).',
       iphoneLidar: 'Start integrations/iphone-lidar/web relay, export RUVIEW_LIDAR_TOKEN, then `ruview lidar --source iphone --url ws://HOST:8787/ws/lidar`.',
     },
-    note: candidates.length ? 'Roles are VID:PID hints; confirm with the listed read command.' : 'No USB serial devices matched known bridges. Check the cable (data-capable) and drivers (CP210x/CH34x).',
+    note: candidates.length ? 'Roles are VID:PID hints; confirm with the listed read command.' : 'No USB serial devices matched known bridges. Check the cable (data-capable) and drivers (CP210x/CH34x/PL2303).',
   };
 }

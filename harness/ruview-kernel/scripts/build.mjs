@@ -31,8 +31,22 @@ function cargo(cargoArgs, cwd) {
   const r = spawnSync('cargo', cargoArgs, { cwd, stdio: 'inherit' });
   if (r.status !== 0) {
     console.error(`cargo failed (${r.error?.message || `exit ${r.status}`})`);
+    const missing = uninitializedSubmodules();
+    if (missing.length) {
+      // The v2 workspace resolves path dependencies inside submodules; a fresh
+      // clone or `git worktree add` leaves them empty and cargo fails on a
+      // missing Cargo.toml.
+      console.error(`Uninitialized git submodules (likely cause): ${missing.join(', ')}`);
+      console.error('Fix: git submodule update --init --recursive   (run at the repository root)');
+    }
     process.exit(1);
   }
+}
+
+function uninitializedSubmodules() {
+  const r = spawnSync('git', ['submodule', 'status'], { cwd: join(V2, '..'), encoding: 'utf8' });
+  if (r.status !== 0) return [];
+  return r.stdout.split('\n').filter((l) => l.startsWith('-')).map((l) => l.slice(1).trim().split(/\s+/)[1]).filter(Boolean);
 }
 
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');

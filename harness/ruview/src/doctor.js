@@ -165,7 +165,7 @@ export async function runDoctor(args = {}, deps) {
     const listed = await listSerialPorts(deps);
     if (listed.ok) {
       const devices = listed.ports.map(classifyPort).filter((d) => d.likelyRoles.length);
-      if (!devices.length) add('devices', 'usb-serial', 'warn', 'no ESP32 / mmWave / RPLIDAR candidates on USB', 'Use a data-capable cable; install CP210x or CH34x drivers; on Linux add your user to dialout.');
+      if (!devices.length) add('devices', 'usb-serial', 'warn', 'no ESP32 / Realtek / mmWave / RPLIDAR candidates on USB', 'Use a data-capable cable; install CP210x, CH34x or PL2303 drivers; on Linux add your user to dialout.');
       for (const d of devices) add('devices', `usb:${d.port}`, 'pass', `${d.bridge || d.usb}: likely ${d.likelyRoles.join('/')} — confirm: ${d.confirmWith[0]}`);
     } else add('devices', 'usb-serial', 'warn', `cannot enumerate (${listed.reason})`, listed.reason === 'pyserial_missing' ? 'pip install pyserial' : null);
     add('devices', 'network-streams', 'skip', 'ESP32 UDP and iPhone LiDAR are network streams: `ruview esp32 --seconds 10`, `ruview lidar --source iphone --url ws://HOST:8787/ws/lidar`');

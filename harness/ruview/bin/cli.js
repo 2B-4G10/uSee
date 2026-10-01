@@ -44,8 +44,8 @@ const VERB_TO_TOOL = {
 
 // Verbs whose kebab-case flags map 1:1 onto snake_case schema fields (ADR-369).
 const SNAKE_VERBS = new Set(['flash', 'flash-plan', 'train', 'train-plan', 'train-gate', 'devices', 'esp32', 'mmwave', 'lidar']);
-const NUMERIC_FLAGS = new Set(['baud', 'boot_log_seconds', 'samples', 'model_score', 'baseline_score', 'n_test', 'seconds', 'udp_port', 'max_packets', 'max_frames']);
-const BOOLEAN_FLAGS = new Set(['confirm', 'cuda', 'allow_unverified']);
+const NUMERIC_FLAGS = new Set(['baud', 'boot_log_seconds', 'samples', 'model_score', 'baseline_score', 'n_test', 'seconds', 'udp_port', 'max_packets', 'max_frames', 'node_id', 'analyze_max_frames']);
+const BOOLEAN_FLAGS = new Set(['confirm', 'cuda', 'allow_unverified', 'analyze']);
 
 function toSchemaArgs(flags) {
   const out = {};
@@ -89,7 +89,7 @@ Operator tools:
   verify [--repo <dir>]                                 run the deterministic proof (VERDICT: PASS)
   claim-check --text "..."  |  --file <path>            lint accuracy claims (the honesty guardrail)
   calibrate --step baseline|enroll|train-room|room-watch
-  monitor --port COM8 [--seconds 12]                    assert CSI is flowing on a node
+  monitor --port COM8 [--seconds 12] [--baud 1500000]   assert CSI is flowing on a node (no reset on open)
   flash --port COM8 --variant s3-8mb [--confirm]        build+flash firmware (Windows/ESP-IDF)
   guidance [--topic homecore] [--query "Wasmtime"]      source-cited code/capability map
   spaces [--resource sites|...|alerts] [--limit 50]     page OAuth-bound Cognitum spatial resources
@@ -103,7 +103,8 @@ Firmware (ADR-370, cross-platform esptool):
 
 Devices (ADR-373) — run on the machine the hardware is attached to:
   devices                                                classify USB serial devices (ESP32, mmWave, RPLIDAR)
-  esp32 [--udp-port 5005] [--seconds 10] [--bind 0.0.0.0]  receive + summarize ESP32 node UDP stream
+  esp32 [--udp-port 5005] [--seconds 10] [--bind 0.0.0.0]  receive + summarize ESP32 / Realtek RAC1 node UDP streams
+        [--analyze [--node-id N] [--backend wasm|napi|auto]]  run live CSI through @ruvnet/ruview-kernel
   mmwave --port <p> [--model auto|mr60bha2|ld2410] [--seconds 10]   60/24 GHz radar readout
   lidar --source rplidar --port <p> [--baud 115200]      RPLIDAR scan summary
   lidar --source iphone --url ws://HOST:8787/ws/lidar    iPhone LiDAR relay (token: RUVIEW_LIDAR_TOKEN)
@@ -173,6 +174,7 @@ export async function run(args) {
       return res.ok ? 0 : 1;
     }
     if (cmd === 'monitor' && flags.seconds) toolArgs.seconds = Number(flags.seconds);
+    if (cmd === 'monitor' && flags.baud) toolArgs.baud = Number(flags.baud);
     if (cmd === 'guidance' && flags.limit) toolArgs.limit = Number(flags.limit);
     if (cmd === 'calibrate' && typeof flags.args === 'string') toolArgs.args = flags.args.split(',');
     if (cmd === 'kernel' && flags.seconds !== undefined) toolArgs.seconds = Number(flags.seconds);

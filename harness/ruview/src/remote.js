@@ -7,8 +7,9 @@
 // remote host with a READ-ONLY tool call, validated locally and remotely.
 // Mutations (flash, train, calibrate) are never forwarded.
 
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -35,14 +36,29 @@ export function loadHosts(path = hostsFile()) {
   return { path, hosts: (data.hosts || []).map(validateHost) };
 }
 
+/**
+ * Windows ignores POSIX modes, so 0o600 alone leaves the file readable through
+ * inherited ACLs. Replace them with a single full-control grant for the owner.
+ * Fails closed: an unrestricted hosts file is an error, not a warning.
+ */
+export function restrictToOwner(path, { platform = process.platform, exec = spawnSync, user = () => userInfo().username } = {}) {
+  if (platform !== 'win32') return 'posix-0600';
+  const r = exec('icacls', [path, '/inheritance:r', '/grant:r', `${user()}:F`], { encoding: 'utf8', windowsHide: true });
+  if (r.error || r.status !== 0) {
+    throw new Error(`could not restrict ${path} to the current user (icacls exit ${r.status ?? r.error?.code}); the hosts file was not made private`);
+  }
+  return 'windows-acl-owner-only';
+}
+
 /** CLI-only: add or replace a host entry. */
-export function saveHost(entry, path = hostsFile()) {
+export function saveHost(entry, path = hostsFile(), deps = {}) {
   const host = validateHost(entry);
   const { hosts } = loadHosts(path);
   const next = [...hosts.filter((h) => h.name !== host.name), host].sort((a, b) => a.name.localeCompare(b.name));
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileSync(path, `${JSON.stringify({ schema: 1, hosts: next }, null, 2)}\n`, { mode: 0o600 });
-  return { path, host };
+  const access = restrictToOwner(path, deps);
+  return { path, host, access };
 }
 
 /** POSIX single-quote one argument for the remote login shell. */

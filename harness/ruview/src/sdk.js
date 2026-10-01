@@ -57,7 +57,7 @@ export function createRuView({ strict = false, deps = OPERATOR_DEPS } = {}) {
       plan: (args) => call('ruview_firmware_plan', args),
       /** Writes flash only when args.confirm === true; otherwise returns the plan. */
       flash: (args) => call('ruview_node_flash', args),
-      monitor: (port, seconds) => call('ruview_node_monitor', seconds ? { port, seconds } : { port }),
+      monitor: (port, seconds, baud) => call('ruview_node_monitor', { port, ...(seconds ? { seconds } : {}), ...(baud ? { baud } : {}) }),
     }),
 
     training: Object.freeze({

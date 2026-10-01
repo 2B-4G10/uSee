@@ -23,7 +23,7 @@ import { fileURLToPath as toPath } from 'node:url';
 import { searchBrain } from './brain.js';
 import { getGuidance, GUIDANCE_TOPICS } from './guidance.js';
 import { listCognitumSpaces } from './spaces.js';
-import { KERNEL_BACKENDS, kernelSelfTest } from './kernel.js';
+import { KERNEL_BACKENDS, kernelAnalyzer, kernelSelfTest } from './kernel.js';
 import { execTool } from './exec.js';
 import { BAUD_RATES, FIRMWARE_VARIANTS, flashFirmware, listSerialPorts } from './firmware.js';
 import { SPLITS, TRAIN_MODES, runTraining, trainingGate } from './training.js';
@@ -154,14 +154,20 @@ const MONITOR_SCRIPT = [
   " print('NO_PYSERIAL'); sys.exit(3)",
   'port=sys.argv[1]',
   'dur=float(sys.argv[2])',
-  'ser=serial.Serial(port,115200,timeout=1)',
+  'baud=int(sys.argv[3])',
+  '# Deassert DTR/RTS before opening: on ESP32 auto-reset and Ameba boot',
+  '# circuits the default open pulses EN and reboots a streaming node.',
+  'ser=serial.Serial()',
+  'ser.port=port; ser.baudrate=baud; ser.timeout=1',
+  'ser.dtr=False; ser.rts=False',
+  'ser.open()',
   'csi=0; n=0; t=time.time()',
   'while time.time()-t<dur:',
   ' ln=ser.readline()',
   ' if not ln: continue',
   " s=ln.decode('utf-8','replace')",
   ' n+=1',
-  " if 'CSI cb' in s or 'csi_collector' in s: csi+=1",
+  " if 'CSI cb' in s or 'csi_collector' in s or 'RUVIEW_CSI: frame #' in s: csi+=1",
   " if 'MGMT+DATA' in s: print('UPGRADE_MGMT_DATA')",
   'ser.close()',
   "print(f'LINES={n} CSI={csi}')",
@@ -236,12 +242,13 @@ export const TOOLS = {
 
   ruview_node_monitor: {
     title: 'Node monitor',
-    description: 'Open an ESP32 serial port and assert CSI is flowing (MGMT+DATA). Fail-closed if python+pyserial or the port is absent. Read-only.',
+    description: 'Open a CSI node serial console without resetting it (DTR/RTS held deasserted) and assert CSI is flowing: ESP32 csi_collector logs (MGMT+DATA) or Realtek RUVIEW_CSI frame logs (baud 1500000). Fail-closed if python+pyserial or the port is absent. Read-only.',
     inputSchema: {
       type: 'object',
       properties: {
         port: { type: 'string', description: 'Serial port, e.g. COM8 or /dev/ttyUSB0.' },
         seconds: { type: 'number', description: 'Capture window (default 12).' },
+        baud: { type: 'number', enum: [115200, 230400, 460800, 921600, 1500000], description: 'Console baud. Default 115200 (ESP32); Realtek Ameba logs at 1500000.' },
       },
     },
     async handler(args = {}) {
@@ -250,12 +257,20 @@ export const TOOLS = {
       const py = findPython();
       if (!py) return { ok: false, reason: 'python_missing' };
       const dur = Number(args.seconds) > 0 ? Number(args.seconds) : 12;
-      const r = await run(py, ['-c', MONITOR_SCRIPT, port, String(dur)], { timeout: (dur + 10) * 1000 });
+      const baud = args.baud ?? 115200;
+      const r = await run(py, ['-c', MONITOR_SCRIPT, port, String(dur), String(baud)], { timeout: (dur + 10) * 1000 });
       if (r.stdout.includes('NO_PYSERIAL')) return { ok: false, reason: 'pyserial_missing', hint: 'pip install pyserial' };
       if (!r.ok) return { ok: false, reason: 'port_error', stderr: r.stderr, error: r.error };
       const csi = Number((r.stdout.match(/CSI=(\d+)/) || [])[1] || 0);
+      const lines = Number((r.stdout.match(/LINES=(\d+)/) || [])[1] || 0);
       const upgraded = r.stdout.includes('UPGRADE_MGMT_DATA');
-      return { ok: csi > 0, csi_callbacks: csi, mgmt_data_upgrade: upgraded, raw: r.stdout.trim() };
+      const out = { ok: csi > 0, csi_callbacks: csi, lines, baud, mgmt_data_upgrade: upgraded, reset_on_open: false, raw: r.stdout.trim() };
+      if (csi === 0) {
+        out.hint = lines === 0
+          ? 'No console output on this port. ESP32-C6/S3 builds with CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG log on the native USB port (303A:1001), not the UART bridge: attach that port, or confirm CSI over the network with `ruview esp32 --seconds 10`. Realtek Ameba boards log at --baud 1500000.'
+          : 'Console output but no CSI log lines in the window. CSI logs are rate-limited (ESP32: first 3, then every 100th callback); lengthen --seconds or confirm over the network with `ruview esp32 --seconds 10`.';
+      }
+      return out;
     },
   },
 
@@ -478,7 +493,7 @@ export const TOOLS = {
 
   ruview_esp32_capture: {
     title: 'Capture ESP32 node stream',
-    description: 'Listen on a local UDP port for ESP32 CSI-node packets (ADR-018 CSI frames, vitals, feature/fused/WASM packets) and summarize per node: packet rates, sequence loss, RSSI, subcarriers, frequency, and latest device vitals. Receive-only; sends nothing to nodes. MCP requires device-access.',
+    description: 'Listen on a local UDP port for CSI-node packets (ESP32 ADR-018 CSI frames, vitals, feature/fused/WASM/ADR-110 sync packets; Realtek RTL8721Dx RAC1 CSI and RHB1 heartbeats per ADR-323) and summarize per node: packet rates, sequence loss, RSSI, CSI shapes, frequency/channel, and latest device vitals. Fails when packets arrive but none decode, and flags heartbeat-only senders. Optional analyze=true runs the busiest (or node_id) node live CSI through @ruvnet/ruview-kernel. Receive-only; sends nothing to nodes. MCP requires device-access.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -486,10 +501,14 @@ export const TOOLS = {
         bind: { type: 'string', enum: ['0.0.0.0', '127.0.0.1', '::', '::1'], description: 'Local bind address. Default 0.0.0.0.' },
         seconds: { type: 'number', minimum: 1, maximum: 300, description: 'Capture window. Default 10.' },
         max_packets: { type: 'number', minimum: 1, maximum: 1000000 },
+        analyze: { type: 'boolean', description: 'Run captured single-antenna CSI through the compute kernel vitals pipeline (needs @ruvnet/ruview-kernel).' },
+        node_id: { type: 'number', minimum: 0, maximum: 255, description: 'Node to analyze. Default: the node with the most CSI frames.' },
+        backend: { type: 'string', enum: [...KERNEL_BACKENDS], description: 'Kernel backend for analyze. Default wasm.' },
+        analyze_max_frames: { type: 'number', minimum: 64, maximum: 20000, description: 'Frame cap for analyze. Default 6000.' },
       },
     },
     handler(args = {}) {
-      return captureEsp32(args);
+      return captureEsp32(args, args.analyze ? { analyze: kernelAnalyzer({ backend: args.backend }) } : {});
     },
   },
 

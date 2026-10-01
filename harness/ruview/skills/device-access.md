@@ -21,8 +21,10 @@ npx @ruvnet/ruview devices          # USB VID:PID → likely ESP32 / mmWave / RP
 
 | Device | Command | Confirms |
 |---|---|---|
-| ESP32 node (USB) | `ruview doctor --port <p> --probe`, `ruview monitor --port <p>` | chip id; CSI callbacks in the serial log |
-| ESP32 node (network) | `ruview esp32 --seconds 10 [--udp-port 5005]` | per-node CSI rate, sequence loss, RSSI, subcarriers, device vitals |
+| ESP32 node (USB) | `ruview doctor --port <p> --probe`, `ruview monitor --port <p>` | chip id; CSI callbacks in the serial log (the monitor never resets the node; C6/S3 USB-Serial/JTAG builds log on the native USB port) |
+| ESP32 / Realtek node (network) | `ruview esp32 --seconds 10 [--udp-port 5005]` | per-node CSI rate, sequence loss, RSSI, CSI shapes, device vitals; Realtek RAC1 CSI and heartbeat-only senders |
+| Realtek RTL8721Dx (USB, PL2303) | `ruview monitor --port <p> --baud 1500000` | `RUVIEW_CSI: frame #` lines in the Ameba log |
+| Live CSI → kernel | `ruview esp32 --seconds 45 --analyze [--node-id N] [--backend napi]` | kernel vitals summary at the measured frame rate (no reference measurement) |
 | 60 GHz MR60BHA2 | `ruview mmwave --port <p> --model mr60bha2` | valid frames, checksum errors, presence/distance/device HR+BR |
 | 24 GHz LD2410 | `ruview mmwave --port <p> --model ld2410` | target state and distances |
 | RPLIDAR | `ruview lidar --source rplidar --port <p> [--baud 115200]` | points, revolutions, range, angular coverage |

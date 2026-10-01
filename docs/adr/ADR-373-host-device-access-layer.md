@@ -123,6 +123,47 @@ Development container, Linux x64, Node 22. No physical sensors were attached.
   19.6 s before these changes, 5.6 s after (concurrent cases, no redundant
   re-reads).
 
+## Amendment 2 (2026-10-01): Realtek nodes, honest capture, live analysis
+
+Driven by a hardware run of this branch against an RTL8721Dx board (PL2303GC,
+COM10) and an ESP32-C6 (CP210x, COM16) on Windows 11:
+
+- **Realtek RAC1/RHB1 (ADR-323).** `ruview_esp32_capture` decodes the 49-byte
+  RAC1 envelope (8- and 16-bit tones, CRC-32 verified, SYNTHETIC flag kept)
+  and counts RHB1 heartbeats per sender. Before this, 3,439 live RAC1 frames
+  in 15 s were all reported as unknown.
+- **No false success.** The capture now fails with `no_decodable_packets`
+  or `heartbeat_only` when packets arrive but none decode. It previously
+  returned `ok: true` with a MEASURED label for zero decoded packets.
+  `heartbeatOnlySenders` names boards that are alive but deliver no CSI — the
+  stall observed on a Realtek board before a reset.
+- **More ESP32 packet kinds.** ADR-110 sync (`0xC511A110`) and ADR-081 mesh
+  envelopes (`0xC5118100`, counted by message type, never a phantom node).
+  A node sending several CSI shapes (the C6 sends 1x256, 1x64 and 1x128)
+  reports each in `csiShapes` instead of only the last one.
+- **Live CSI → kernel.** `--analyze` runs the busiest (or `--node-id`) node's
+  dominant single-antenna shape through `@ruvnet/ruview-kernel` at the
+  measured arrival rate, with a bounded frame buffer (`analyze_max_frames`,
+  default 6,000). Results are signal-processing estimates with no reference.
+- **Serial monitor no longer reboots nodes.** The monitor opens the port with
+  DTR/RTS deasserted. MEASURED on the C6: uptime kept rising across a monitor
+  run (1,612 s → 1,625 s); before, opening the port reset it (uptime ~15 s).
+  It takes `--baud` (Realtek logs at 1,500,000) and explains the C6/S3
+  USB-Serial/JTAG console when the UART is silent.
+- **Device scan.** Prolific `067B:23A3` (PL2303GC) is classified `realtek`.
+- **Windows.** The hosts file gets an owner-only ACL (`icacls`), failing
+  closed; POSIX `0o600` is ignored on Windows. The symlink-escape test skips
+  only where Windows refuses to create symlinks.
+- **Parser speed.** Int8Array view and `sqrt` instead of per-byte reads and
+  `Math.hypot`: MEASURED 0.42–0.52 M → 1.33–1.67 M packets/s (about 3.2x;
+  three interleaved runs, median of seven each, Windows 11 x64, Node 24).
+
+Hardware evidence (MEASURED, this host): C6 node 42, 45 s, 1,160 packets,
+1,157 decoded, 0 sequence loss, 541 1x256 frames at 12.1 Hz analyzed by the
+napi kernel (integrity verified). The RAC1 decoder is cross-checked against
+the Rust `realtek-csi-sim` encoder (200/200 frames at 8- and 16-bit tones);
+a live RAC1 re-run is pending reconnection of the Realtek board.
+
 ## Consequences
 
 - One command per modality works across CLI, MCP and SDK, with actionable

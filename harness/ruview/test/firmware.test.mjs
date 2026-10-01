@@ -57,7 +57,15 @@ test('bundle resolution verifies every image and builds a shell-free esptool arg
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('checksum mismatch, missing checksums, and escaping symlinks are refused', () => {
+// Creating symlinks on Windows needs Developer Mode or an elevated shell.
+function trySymlink(target, path) {
+  try { symlinkSync(target, path); return true; } catch (error) {
+    if (process.platform === 'win32' && error.code === 'EPERM') return false;
+    throw error;
+  }
+}
+
+test('checksum mismatch, missing checksums, and escaping symlinks are refused', (t) => {
   const tampered = makeBundle({ tamper: true });
   const unsigned = makeBundle({ sums: false });
   const outside = mkdtempSync(join(tmpdir(), 'ruview-outside-'));
@@ -68,8 +76,11 @@ test('checksum mismatch, missing checksums, and escaping symlinks are refused', 
     assert.equal(resolveBundle(unsigned, 's3-8mb', { requireChecksums: false }).images[0].integrity, 'unverified');
     writeFileSync(join(outside, 'evil.bin'), 'X');
     rmSync(join(linked, 'esp32-csi-node.bin'));
-    symlinkSync(join(outside, 'evil.bin'), join(linked, 'esp32-csi-node.bin'));
-    assert.throws(() => resolveBundle(linked, 's3-8mb', { requireChecksums: false }), (e) => e.reason === 'image_untrusted');
+    if (trySymlink(join(outside, 'evil.bin'), join(linked, 'esp32-csi-node.bin'))) {
+      assert.throws(() => resolveBundle(linked, 's3-8mb', { requireChecksums: false }), (e) => e.reason === 'image_untrusted');
+    } else {
+      t.diagnostic('symlink case skipped: this Windows account cannot create symlinks (EPERM)');
+    }
     assert.throws(() => resolveBundle(tampered, 'esp8266'), (e) => e.reason === 'invalid_variant');
   } finally {
     for (const d of [tampered, unsigned, outside, linked]) rmSync(d, { recursive: true, force: true });

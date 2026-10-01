@@ -90,7 +90,7 @@ export interface RuView {
     ports(): Promise<ToolResult>;
     plan(args: FlashArgs): Promise<ToolResult>;
     flash(args: FlashArgs): Promise<ToolResult>;
-    monitor(port: string, seconds?: number): Promise<ToolResult>;
+    monitor(port: string, seconds?: number, baud?: 115200 | 230400 | 460800 | 921600 | 1500000): Promise<ToolResult>;
   };
   training: {
     modes: readonly TrainMode[];
@@ -101,7 +101,11 @@ export interface RuView {
   };
   devices: {
     scan(): Promise<ToolResult>;
-    esp32(args?: { udp_port?: number; bind?: '0.0.0.0' | '127.0.0.1' | '::' | '::1'; seconds?: number; max_packets?: number }): Promise<ToolResult>;
+    esp32(args?: {
+      udp_port?: number; bind?: '0.0.0.0' | '127.0.0.1' | '::' | '::1'; seconds?: number; max_packets?: number;
+      /** Run live single-antenna CSI through @ruvnet/ruview-kernel (optional package). */
+      analyze?: boolean; node_id?: number; backend?: 'wasm' | 'napi' | 'auto'; analyze_max_frames?: number;
+    }): Promise<ToolResult>;
     mmwave(args: { port: string; model?: 'auto' | 'mr60bha2' | 'ld2410'; seconds?: number }): Promise<ToolResult>;
     lidar(args: { source: 'rplidar'; port: string; baud?: 115200 | 256000 | 460800 | 921600; seconds?: number } | { source: 'iphone'; url: string; seconds?: number }): Promise<ToolResult>;
   };
