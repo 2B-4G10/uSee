@@ -84,9 +84,13 @@ export function viewOf(ui, model, opts) {
   ]);
   const rule = pics.shimmer ? ui.Raster(pics.shimmer.grid.toRaster('shimmer')) : null;
 
-  const tabs = opts.onMode ? row(TABS.map(([m, key, label]) => Button({
-    key: `tab-${m}`, hotkey: key, label: `${m === mode ? '▸ ' : ''}${label} (${key})`, onPress: () => opts.onMode(m),
-  })), { gap: 2 }) : null;
+  // Hotkeys reach a Pane only while it holds the keyboard; say how to give it.
+  const tabs = opts.onMode ? row([
+    ...TABS.map(([m, key, label]) => Button({
+      key: `tab-${m}`, hotkey: key, label: `${m === mode ? '▸ ' : ''}${label} (${key})`, onPress: () => opts.onMode(m),
+    })),
+    opts.focused === false ? t('click the pane or press ctrl+x tab to use the keys', { dimColor: true, italic: true }) : null,
+  ], { gap: 2 }) : null;
 
   const alerts = (model?.alerts || []).map((a) => Text({ color: a.level === 'bad' ? 'red' : 'yellow', wrap: 'wrap', children: `! ${a.text}` }));
 

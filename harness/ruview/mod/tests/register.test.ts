@@ -26,8 +26,10 @@ describe('register', () => {
       runs.push(e.argv)
       return { value: { exitCode: 0, stdout: JSON.stringify(CAPTURE), stderr: '' } }
     })
+    const focusAsked: (true | undefined)[] = []
     on('ui.open', ($, e) => {
       opened.push(e.id)
+      focusAsked.push(e.focus)
       return { value: undefined }
     })
     on('ui.close', ($, e) => {
@@ -50,6 +52,7 @@ describe('register', () => {
 
     expect(text).toContain('RuView pane open')
     expect(opened).toEqual(['ruview-live'])
+    expect(focusAsked).toEqual([true]) // hotkeys reach a Pane only while it holds the keyboard
     expect(runs.length).toBeGreaterThanOrEqual(1)
     const argv = runs[0] ?? []
     expect(argv[0]).toBe('node')
@@ -109,6 +112,7 @@ describe('register', () => {
     const again = await $.ui.mount({ plugin: 'ruview-live', surface: 'terminal', component: 'Pane', requestId: 'ruview-live', props: PANE })
     expect(await again.find({ type: 'Text', text: /NODES/ })).toBeDefined()
     expect(await again.find({ type: 'Text', text: /waiting for the first capture/ })).toBeUndefined()
+    expect(await again.find({ type: 'Text', text: /ctrl\+x tab/ })).toBeDefined() // unfocused: says how to focus
     const polled = runs.length
     // Step time as a live session does (the animation timer runs every 80 ms).
     for (let s = 0; s < 16; s++) {

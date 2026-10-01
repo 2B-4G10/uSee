@@ -143,7 +143,10 @@ export function register(on, options = {}) {
 
   async function open(initialMode) {
     if (MODES.includes(initialMode)) mode = initialMode;
-    await host.open({ id: PANE_ID, title: 'RuView', closeOnEscape: true });
+    // Ask for the keyboard so the view keys (1/2/3, r, c) work at once; the
+    // surface grants it only over an empty prompt. No closeOnEscape: Escape
+    // hands the keys back without closing the pane.
+    await host.open({ id: PANE_ID, title: 'RuView', focus: true });
     stop();
     startPolling();
   }
@@ -176,7 +179,10 @@ export function register(on, options = {}) {
     if (arg === 'off') { await close(); host.status(undefined); return { text: 'RuView pane closed.' }; }
     if (arg === 'refresh') { await refresh(); return { text: statusOf(model) }; }
     if (MODES.includes(arg)) {
-      if (isOpen) setMode(arg); else await open(arg);
+      if (isOpen) {
+        setMode(arg);
+        await host.open({ id: PANE_ID, title: 'RuView', focus: true }).catch(() => undefined);
+      } else await open(arg);
       return { text: `RuView pane: ${arg} view.` };
     }
     if (isOpen) { await close(); return { text: 'RuView pane closed.' }; }
@@ -198,6 +204,7 @@ export function register(on, options = {}) {
     const now = await $.clock.now();
     return viewOf(ui, shownModel(), {
       ...drawOpts(now), refreshMs: settings.refreshMs, liveRefreshMs: settings.liveRefreshMs, busy, now,
+      focused: e.props?.isFocused !== false,
       udpPort: settings.udpPort, radarConfigured: Boolean(settings.radarHost),
       onRefresh: () => { void refresh(); },
       onClose: () => { void close(); },

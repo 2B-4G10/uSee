@@ -160,3 +160,10 @@ test('spectrum requests, merging across captures, and live commands', () => {
   assert.deepEqual(merged[0].frames, [[2], [3]], 'frames carry across captures, bounded');
   assert.deepEqual(spectrumWith(merged, [{ ...a, bins: 8, frames: [[9]] }])[0].frames, [[9]], 'a new bin count starts over');
 });
+
+test('an unfocused pane says how to give it the keys; a focused one does not', () => {
+  const base = { mode: 'overview', refreshMs: 15000, columns: 120, rows: 34, onMode() {}, onRefresh() {}, onClose() {} };
+  const model = modelOf(spectrumCapture(false), null, 0);
+  assert.match(JSON.stringify(viewOf(UI, model, { ...base, focused: false })), /ctrl\+x tab to use the keys/);
+  assert.doesNotMatch(JSON.stringify(viewOf(UI, model, { ...base, focused: true })), /ctrl\+x tab/);
+});
