@@ -160,6 +160,37 @@ export function parsePacket(buf, opts = {}) {
 
 const shapeKey = (pkt) => `${pkt.antennas}x${pkt.subcarriers}`;
 
+/** Jumps larger than this are a counter reset or a stray frame, not loss. */
+export const SEQ_WINDOW = 1024;
+
+/**
+ * Loss accounting that survives UDP reordering and stray sequence values.
+ * A late packet fills the hole it left instead of being re-counted. A single
+ * out-of-window value is a stray (observed live on an RTL8721Dx: sporadic
+ * seq 0 and +52,835 frames between in-order ones) and leaves the baseline
+ * alone; two consecutive frames agreeing on a new range are a counter reset.
+ */
+function trackSequence(n, seq) {
+  if (n.lastSeq === null) { n.lastSeq = seq; return; }
+  const d = seq - n.lastSeq;
+  if (d >= 1 && d <= SEQ_WINDOW) {
+    n.seqGaps += d - 1;
+    n.lastSeq = seq;
+    n.pendingSeq = null;
+  } else if (d <= 0 && d > -SEQ_WINDOW) {
+    n.reordered += 1; // late or duplicate; a late packet fills one counted gap
+    if (d < 0 && n.seqGaps > 0) n.seqGaps -= 1;
+  } else if (n.pendingSeq != null && seq - n.pendingSeq >= 1 && seq - n.pendingSeq <= SEQ_WINDOW) {
+    n.strays -= 1; // the previous out-of-window frame started a new range
+    n.resyncs += 1;
+    n.lastSeq = seq;
+    n.pendingSeq = null;
+  } else {
+    n.strays += 1;
+    n.pendingSeq = seq;
+  }
+}
+
 /** Aggregate parsed packets into a per-node summary. */
 export class NodeStats {
   constructor() {
@@ -191,14 +222,13 @@ export class NodeStats {
     const key = `${pkt.source}:${pkt.nodeId ?? -1}`;
     let n = this.nodes.get(key);
     if (!n) {
-      n = { source: pkt.source, nodeId: pkt.nodeId ?? -1, packets: {}, rssiSum: 0, rssiCount: 0, lastSeq: null, seqGaps: 0, shapes: new Map(), vitals: null };
+      n = { source: pkt.source, nodeId: pkt.nodeId ?? -1, packets: {}, rssiSum: 0, rssiCount: 0, lastSeq: null, pendingSeq: null, seqGaps: 0, reordered: 0, strays: 0, resyncs: 0, shapes: new Map(), vitals: null };
       this.nodes.set(key, n);
     }
     n.packets[pkt.kind] = (n.packets[pkt.kind] || 0) + 1;
     if (pkt.kind === 'csi') {
       n.rssiSum += pkt.rssi; n.rssiCount += 1;
-      if (n.lastSeq !== null && pkt.seq > n.lastSeq + 1) n.seqGaps += pkt.seq - n.lastSeq - 1;
-      n.lastSeq = pkt.seq;
+      trackSequence(n, pkt.seq);
       const shape = shapeKey(pkt);
       const sh = n.shapes.get(shape) || { count: 0, ampSum: 0, last: null };
       sh.count += 1; sh.ampSum += pkt.meanAmplitude; sh.last = pkt;
@@ -231,6 +261,9 @@ export class NodeStats {
           packets: n.packets,
           csiRateHz: Number((csi / seconds).toFixed(2)),
           csiLossFraction: received ? Number((n.seqGaps / received).toFixed(4)) : null,
+          ...(n.reordered ? { seqReordered: n.reordered } : {}),
+          ...(n.strays ? { seqStrays: n.strays } : {}),
+          ...(n.resyncs ? { seqResyncs: n.resyncs } : {}),
           rssiMean: n.rssiCount ? Number((n.rssiSum / n.rssiCount).toFixed(1)) : null,
           csi: shapes.length ? describe(shapes[0]) : null,
           ...(shapes.length > 1 ? { csiShapes: shapes.map(describe) } : {}),

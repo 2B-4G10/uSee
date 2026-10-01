@@ -114,6 +114,30 @@ test('mixed ESP32 + Realtek fleet: per-source nodes, shapes, loss, heartbeats', 
   assert.equal(r.heartbeatOnlySenders, undefined, 'the sender also delivered CSI');
 });
 
+test('loss survives reordering and stray sequence values (live RTL8721Dx pattern)', async () => {
+  // B+0..B+19 (B = 50,000, live counters are ~80k) with: B+5 missing, B+8 arriving after B+9, B+12 duplicated, a
+  // stray +52,835 frame after B+15, and a stray 0 after B+17 that hides a
+  // real loss (B+18) — both stray patterns were seen live on COM10. Then a genuine
+  // counter reset: 1, 2, 3.
+  const B = 50000;
+  const seqs = [];
+  for (let i = 0; i < 20; i++) {
+    if (i === 5 || i === 8 || i === 18) continue;
+    seqs.push(B + i);
+    if (i === 9) seqs.push(B + 8);
+    if (i === 12) seqs.push(B + 12);
+    if (i === 15) seqs.push(B + 15 + 52835);
+    if (i === 17) seqs.push(0);
+  }
+  seqs.push(1, 2, 3);
+  const r = await capture({ max_packets: seqs.length }, seqs.map((seq) => rac1({ seq })));
+  const n = r.nodes[0];
+  assert.equal(n.packets.csi, seqs.length);
+  assert.deepEqual([n.seqReordered, n.seqStrays, n.seqResyncs], [2, 2, 1]);
+  // B+5 and B+18 are truly lost: 2 gaps over csi + gaps slots.
+  assert.equal(n.csiLossFraction, Number((2 / (seqs.length + 2)).toFixed(4)));
+});
+
 test('heartbeat-only and undecodable streams fail instead of claiming MEASURED', async () => {
   const hb = await capture({ max_packets: 3 }, [rhb1(), rhb1(), rhb1()]);
   assert.deepEqual([hb.ok, hb.reason, hb.evidence, hb.heartbeats], [false, 'heartbeat_only', null, 3]);

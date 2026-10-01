@@ -44,7 +44,7 @@
     "skills/train-pose.md": "8cb132e468392497377828f7974c744e4c877134ed9a87f960f77fa1221540ba",
     "skills/verify.md": "2d38d240e9810a7827e2ebd3717dc0f85c646cc92e46c3812fe77c5b9eb40b76",
     "src/brain.js": "0f16a75aea943acdacc430ff11d5df7ecdec9cca2ab497795ff6f33eaebdfab6",
-    "src/devices/esp32.js": "54e234f41d88a5032f473791e78cfc2fd2a34776af19c9ac4943c3a1e9be381e",
+    "src/devices/esp32.js": "59c445b9d36188405d075953941a0abf261ea3ee8c0523ffe71ac1d00fcccbff",
     "src/devices/lidar.js": "d753d88375358ced5174376753c276b5ca621f38ae48eac58dbb307b9004b629",
     "src/devices/mmwave.js": "09d828e3b3e140926194ab83bf27e7c63cbda1cf438385c82c0e89b9d8e4b526",
     "src/devices/registry.js": "26725e43adaa908b41462f492c5f6bf63e9193f3ee076e3d64ebaa012b66f6be",
@@ -70,7 +70,7 @@
     "src/tools.js": "cd72ac87e85e0bfbef7af11c98d03c4cb63a5bdd5da760460e9df8de9468bc34",
     "src/training.js": "b8451c48db69c7d077d75f07500996213beaa52705116f64afafe084e68e3956"
   },
-  "filesDigest": "df2350f6a9989615e1978dfc57377edca97e794001ed23a3348ded984441d033",
+  "filesDigest": "b8c8a261e647535ccfafc54783fc25d7de961eab584b3365c9457f9cf9cfe46f",
   "brainDigest": "c0fb7b079ded157059b91601361429944697dae3cc42abc00dfe1a680986b0f4",
   "gateFingerprint": "6e53c784eee38310188948fc75fb49e6b4ebc04e247d01b903fa8c8a92d67bdd",
   "developmentPins": {

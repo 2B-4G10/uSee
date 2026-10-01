@@ -175,6 +175,20 @@ scrubbed child env) and aborted on the firmware's U+2192 log character, so
 `bootLog.captured` was false and an earlier abort would have hidden the CSI
 evidence. It now writes raw bytes; a regression test forces cp1252.
 
+Live RTL8721Dx re-run (MEASURED, board 4 on COM10, node 3, alongside the C6):
+`devices` classified COM10 as `realtek`; a 20 s capture decoded 7,404/7,404
+packets (6,959 RAC1 frames at 348 Hz, RSSI −38.9 dBm, 200 RHB1 heartbeats);
+`monitor --baud 1500000` saw 62 CSI log lines and did not reset the board
+(sequence kept rising, 80,856 → 88,257). `--analyze --node-id 3` ran 12,549
+live frames at a measured 313.7 Hz through the WASM kernel (integrity
+verified). The board also exposed a loss-accounting bug carried over from the
+original code: one stray sequence value (+52,835, then straight back) was
+counted as 52,834 lost frames, giving 97% "loss". The tracker now treats a
+single out-of-window value as a stray, needs two agreeing frames to accept a
+counter reset, and lets a late packet fill its own gap. Against ground truth
+(unique sequence numbers over the span, 15 s): 4,783/4,783 present, true loss
+0, 9 strays — the tracker reported loss 0 and 9 strays.
+
 ## Consequences
 
 - One command per modality works across CLI, MCP and SDK, with actionable
