@@ -1,0 +1,110 @@
+name: uSee release
+
+# Publishes the Android app as a GitHub release `usee-v<versionName>`:
+#  - automatically when a new versionName reaches main (no tag push needed),
+#  - when a matching `usee-v*` tag is pushed, or
+#  - manually ("Run workflow") for the version currently on the chosen ref.
+# An existing release is only re-uploaded on a tag push or manual run.
+on:
+  push:
+    branches: [main]
+    paths: ["android/app/build.gradle.kts"]
+    tags: ["usee-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: usee-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Resolve version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' android/app/build.gradle.kts)"
+          tag="usee-v$version"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match versionName $version"
+            exit 1
+          fi
+          publish=true
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = branch ] && gh release view "$tag" >/dev/null 2>&1; then
+            publish=false
+            echo "Release $tag already exists; nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "VERSION=$version"
+            echo "TAG=$tag"
+          } >> "$GITHUB_ENV"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+      - name: Upstream contract
+        if: steps.version.outputs.publish == 'true'
+        run: python3 android/tools/upstream_contract.py
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        if: steps.version.outputs.publish == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        if: steps.version.outputs.publish == 'true'
+
+      - name: Test, lint and build
+        if: steps.version.outputs.publish == 'true'
+        working-directory: android
+        env:
+          USEE_KEYSTORE_BASE64: ${{ secrets.USEE_KEYSTORE_BASE64 }}
+          USEE_KEYSTORE_PASSWORD: ${{ secrets.USEE_KEYSTORE_PASSWORD }}
+          USEE_KEY_ALIAS: ${{ secrets.USEE_KEY_ALIAS }}
+          USEE_KEY_PASSWORD: ${{ secrets.USEE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$USEE_KEYSTORE_BASE64" ]; then
+            printf '%s' "$USEE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/usee.jks"
+            export USEE_KEYSTORE_FILE="$RUNNER_TEMP/usee.jks"
+            echo "SIGNING=release" >> "$GITHUB_ENV"
+          else
+            echo "SIGNING=debug" >> "$GITHUB_ENV"
+          fi
+          unset USEE_KEYSTORE_BASE64
+          ./gradlew --no-daemon testDebugUnitTest lintRelease assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/uSee-$VERSION.apk"
+          (cd "$RUNNER_TEMP" && sha256sum "uSee-$VERSION.apk" > "uSee-$VERSION.apk.sha256")
+
+      - name: Publish GitHub release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            echo "## uSee $VERSION"
+            echo
+            echo "Download **uSee-$VERSION.apk** below and open it on your phone (Android 8.0+)."
+            echo "Full guide: [android/README.md](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/android/README.md)"
+            echo
+            if [ "$SIGNING" = debug ]; then
+              echo "> **Test signature.** This build is signed with a temporary key, so Android will"
+              echo "> not install it over a differently signed uSee. Uninstall the old app first."
+              echo
+            fi
+            echo "SHA-256: \`$(cut -d' ' -f1 "$RUNNER_TEMP/uSee-$VERSION.apk.sha256")\`"
+          } > "$notes"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$RUNNER_TEMP/uSee-$VERSION.apk" "$RUNNER_TEMP/uSee-$VERSION.apk.sha256" --clobber
+            gh release edit "$TAG" --notes-file "$notes"
+          else
+            gh release create "$TAG" "$RUNNER_TEMP/uSee-$VERSION.apk" "$RUNNER_TEMP/uSee-$VERSION.apk.sha256" \
+              --target "$GITHUB_SHA" --title "uSee $VERSION" --notes-file "$notes" --latest
+          fi
