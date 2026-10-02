@@ -76,9 +76,9 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: @Composa
 @Composable
 fun Pill(
     text: String,
-    color: Color = Palette.Cyan,
-    icon: ImageVector? = null,
+    color: Color,
     modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
     filled: Boolean = false,
 ) {
     Row(

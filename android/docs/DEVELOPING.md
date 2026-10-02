@@ -4,7 +4,14 @@ Native Android app: Kotlin, Jetpack Compose, Material 3. No backend.
 
 ## Build
 
-Requirements: JDK 17+, Android SDK (platform 35, build-tools 35).
+Requirements: JDK 17+ (CI uses 21), Android SDK platform 37 and build-tools 37.
+Toolchain: Gradle 9.8 (checksum-pinned wrapper), Android Gradle Plugin 9.4 with
+built-in Kotlin 2.4, Jetpack Compose BOM 2026.09.
+
+`compileSdk` is 37 (required by AndroidX Core 1.19) while `targetSdk` stays at
+36: apps targeting 37 must hold `ACCESS_LOCAL_NETWORK` for LAN sockets, mDNS and
+UDP. Raise `targetSdk` only together with requesting that permission and an
+on-device test of sensor discovery.
 
 ```bash
 cd android

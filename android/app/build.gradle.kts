@@ -1,8 +1,8 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
@@ -19,16 +19,18 @@ fun signingValue(key: String, env: String): String? =
 
 android {
     namespace = "com.usee.scanner"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.usee.scanner"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables { useSupportLibrary = true }
+        // Stays at 36 on purpose: targeting 37 enforces ACCESS_LOCAL_NETWORK for
+        // LAN sockets, mDNS and UDP. Raise it together with that permission and
+        // an on-device test of sensor discovery.
+        @Suppress("OldTargetApi")
+        targetSdk = 36
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     signingConfigs {
@@ -64,9 +66,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -76,6 +75,12 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
