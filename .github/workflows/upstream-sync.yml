@@ -1,0 +1,168 @@
+name: Upstream sync
+
+# Weekly: merge ruvnet/RuView main into a sync branch, re-derive the wire
+# contract the Android app depends on, rebuild and test the app, and open (or
+# refresh) a pull request into main. Nothing is merged automatically.
+#
+# Pushing upstream changes that touch .github/workflows needs a token with the
+# `workflows` permission: add a fine-grained PAT as secret UPSTREAM_SYNC_TOKEN
+# (contents, pull requests and workflows: read & write on this repository).
+on:
+  schedule:
+    - cron: "47 4 * * 1" # Mondays 04:47 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: ruvnet/RuView
+  UPSTREAM_BRANCH: main
+  SYNC_BRANCH: upstream-sync
+
+jobs:
+  sync:
+    # Never run in the upstream repository itself.
+    if: github.repository != 'ruvnet/RuView'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+
+      - name: Fetch upstream
+        id: upstream
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch --no-tags upstream "$UPSTREAM_BRANCH"
+          behind="$(git rev-list --count "HEAD..upstream/$UPSTREAM_BRANCH")"
+          sha="$(git rev-parse "upstream/$UPSTREAM_BRANCH")"
+          {
+            echo "behind=$behind"
+            echo "sha=$sha"
+            echo "short=${sha:0:9}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Upstream ${UPSTREAM_REPO}@${sha:0:9}: $behind new commit(s)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Merge upstream into sync branch
+        if: steps.upstream.outputs.behind != '0'
+        id: merge
+        run: |
+          git config user.name "${{ github.repository_owner }}"
+          git config user.email "${{ github.repository_owner_id }}+${{ github.repository_owner }}@users.noreply.github.com"
+          git checkout -B "$SYNC_BRANCH"
+          if ! git merge --no-ff --no-edit -m "chore: sync ${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}" "upstream/$UPSTREAM_BRANCH"; then
+            {
+              echo "### Merge conflict"
+              echo
+              echo "Upstream cannot be merged automatically. Conflicting paths:"
+              # shellcheck disable=SC2016 # literal backticks for Markdown
+              git diff --name-only --diff-filter=U | sed 's/^/- `/; s/$/`/'
+              echo
+              echo "Resolve locally: \`git fetch https://github.com/${UPSTREAM_REPO} ${UPSTREAM_BRANCH} && git merge FETCH_HEAD\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            git merge --abort
+            exit 1
+          fi
+
+      - name: Refresh app contract
+        if: steps.upstream.outputs.behind != '0'
+        id: contract
+        run: |
+          set +e
+          python3 android/tools/upstream_contract.py --report "$RUNNER_TEMP/contract.md"
+          check=$?
+          python3 android/tools/upstream_contract.py --update > /dev/null
+          set -e
+          echo "severity=$check" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/contract.md" >> "$GITHUB_STEP_SUMMARY"
+          if ! git diff --quiet -- android; then
+            git add android/upstream-contract.lock.json android/app/src/main/java/com/usee/scanner/core/UpstreamContract.kt
+            git commit -m "chore(android): refresh upstream contract for ${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}"
+          fi
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        if: steps.upstream.outputs.behind != '0'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        if: steps.upstream.outputs.behind != '0'
+
+      - name: Test and build the app
+        if: steps.upstream.outputs.behind != '0'
+        id: build
+        working-directory: android
+        run: |
+          if ./gradlew --no-daemon testDebugUnitTest lintRelease assembleRelease; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.build.outputs.ok == 'true'
+        with:
+          name: usee-apk-upstream-${{ steps.upstream.outputs.short }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14
+
+      - name: Push sync branch
+        if: steps.upstream.outputs.behind != '0'
+        run: |
+          if ! git push --force origin "$SYNC_BRANCH"; then
+            echo "### Push rejected" >> "$GITHUB_STEP_SUMMARY"
+            echo "If upstream changed workflow files, add the UPSTREAM_SYNC_TOKEN secret (see the header of this workflow)." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Open or refresh pull request
+        if: steps.upstream.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+          SEVERITY: ${{ steps.contract.outputs.severity }}
+          BUILD_OK: ${{ steps.build.outputs.ok }}
+        run: |
+          body="$RUNNER_TEMP/body.md"
+          case "$SEVERITY" in
+            0) verdict="No change to anything the app uses." ;;
+            3) verdict="App constants were regenerated automatically." ;;
+            *) verdict="**Needs review:** a wire format the app decodes changed." ;;
+          esac
+          {
+            echo "Weekly merge of [${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}](https://github.com/${UPSTREAM_REPO}/commit/${{ steps.upstream.outputs.sha }}) (${{ steps.upstream.outputs.behind }} new commits)."
+            echo
+            echo "- App contract: $verdict"
+            echo "- App tests, lint and APK build: $([ "$BUILD_OK" = true ] && echo passed || echo '**failed**')"
+            echo "- Run and APK artifact: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            cat "$RUNNER_TEMP/contract.md"
+            echo
+            echo "Merge with a **merge commit** (not squash) so upstream history stays shared."
+          } > "$body"
+          title="Weekly upstream sync: ${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}"
+          if [ "$SEVERITY" = 4 ] || [ "$BUILD_OK" != true ]; then
+            title="[needs review] $title"
+          fi
+          base="${{ github.event.repository.default_branch }}"
+          number="$(gh pr list --head "$SYNC_BRANCH" --base "$base" --state open --json number --jq '.[0].number')"
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "$title" --body-file "$body"
+          else
+            gh pr create --head "$SYNC_BRANCH" --base "$base" --title "$title" --body-file "$body"
+          fi
+
+      - name: Fail on app breakage
+        if: steps.build.outputs.ok == 'false'
+        run: |
+          echo "::error::The Android app no longer builds or passes tests against upstream."
+          exit 1

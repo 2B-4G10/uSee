@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img" aria-label="uSee — see your WiFi environment">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0E1A31"/>
+      <stop offset="1" stop-color="#070B14"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#2EE6D6" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#2EE6D6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2EE6D6"/>
+      <stop offset="1" stop-color="#7C5CFF"/>
+    </linearGradient>
+    <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2EE6D6" stop-opacity="0"/>
+      <stop offset="1" stop-color="#2EE6D6" stop-opacity="0.45"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="380" rx="28" fill="url(#bg)"/>
+  <!-- radar -->
+  <g transform="translate(250 190)">
+    <circle r="170" fill="url(#glow)"/>
+    <g fill="none" stroke="#2EE6D6">
+      <circle r="150" stroke-opacity="0.18"/>
+      <circle r="112" stroke-opacity="0.22"/>
+      <circle r="75" stroke-opacity="0.26"/>
+      <circle r="38" stroke-opacity="0.30"/>
+      <line x1="-150" y1="0" x2="150" y2="0" stroke-opacity="0.10"/>
+      <line x1="0" y1="-150" x2="0" y2="150" stroke-opacity="0.10"/>
+    </g>
+    <path d="M0 0 L150 0 A150 150 0 0 0 106 -106 Z" fill="url(#sweep)"/>
+    <line x1="0" y1="0" x2="150" y2="0" stroke="#2EE6D6" stroke-width="2.5"/>
+    <g fill="#2EE6D6">
+      <circle cx="62" cy="-88" r="5" fill-opacity="0.8"/>
+      <circle cx="-96" cy="40" r="4" fill-opacity="0.5"/>
+      <circle cx="40" cy="104" r="4" fill-opacity="0.6"/>
+    </g>
+    <!-- eye of radio waves -->
+    <g fill="none" stroke-linecap="round" transform="scale(1.35) translate(-54 -54)">
+      <path d="M30,54 Q54,28 78,54" stroke="#2EE6D6" stroke-width="3.2"/>
+      <path d="M30,54 Q54,80 78,54" stroke="#2EE6D6" stroke-width="3.2"/>
+      <path d="M24,54 Q54,18 84,54" stroke="#7C5CFF" stroke-width="2.4"/>
+      <path d="M24,54 Q54,90 84,54" stroke="#7C5CFF" stroke-width="2.4"/>
+      <circle cx="54" cy="54" r="10" stroke="#2EE6D6" stroke-width="2.6"/>
+      <circle cx="54" cy="54" r="4.5" fill="#E8FFFD" stroke="none"/>
+    </g>
+  </g>
+  <!-- text -->
+  <g font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+    <text x="480" y="168" font-size="96" font-weight="700" fill="url(#title)" letter-spacing="-2">uSee</text>
+    <text x="484" y="222" font-size="30" fill="#E9F1FF">See your WiFi environment.</text>
+    <text x="484" y="266" font-size="20" fill="#8C9AB8">Scan networks · detect sensing hardware · watch RF motion live</text>
+    <g font-size="16" font-weight="600">
+      <rect x="484" y="292" width="118" height="32" rx="16" fill="#2EE6D6" fill-opacity="0.12" stroke="#2EE6D6" stroke-opacity="0.4"/>
+      <text x="543" y="313" text-anchor="middle" fill="#2EE6D6">Android 8+</text>
+      <rect x="614" y="292" width="132" height="32" rx="16" fill="#7C5CFF" fill-opacity="0.12" stroke="#7C5CFF" stroke-opacity="0.4"/>
+      <text x="680" y="313" text-anchor="middle" fill="#A894FF">No camera</text>
+      <rect x="758" y="292" width="132" height="32" rx="16" fill="#3DDC97" fill-opacity="0.12" stroke="#3DDC97" stroke-opacity="0.4"/>
+      <text x="824" y="313" text-anchor="middle" fill="#3DDC97">Local only</text>
+    </g>
+  </g>
+</svg>

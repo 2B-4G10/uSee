@@ -1,130 +1,143 @@
-# uSee — WiFi environment scanner for Android
+<p align="center">
+  <img src="docs/banner.svg" alt="uSee — see your WiFi environment" width="100%">
+</p>
 
-uSee is a native Android app (Kotlin + Jetpack Compose) that scans the WiFi
-environment around the phone, **auto-detects which sensing hardware is
-available**, and turns RF disturbances into a live motion view. It is the
-mobile front end for the RuView sensing stack in this repository.
+<p align="center">
+  <a href="https://github.com/2B-4G10/uSee/releases/latest"><b>⬇️ Download the latest APK</b></a>
+  &nbsp;·&nbsp; <a href="#-get-started-in-2-minutes">Get started</a>
+  &nbsp;·&nbsp; <a href="#-faq">FAQ</a>
+</p>
 
-| Sense (phone RSSI) | Sense (ESP32 CSI) | Scan | Detect |
-|---|---|---|---|
-| ![](docs/screenshots/sensePhone.png) | ![](docs/screenshots/senseEsp32.png) | ![](docs/screenshots/scan.png) | ![](docs/screenshots/detect.png) |
+---
 
-> Screenshots are JVM renders of the real screens fed with **SYNTHETIC** data;
-> they do not show a measurement.
+**uSee** turns your Android phone into a WiFi radar. It maps every network around you, works out which sensing hardware you have, and shows movement in the room as a live picture. There's no camera, account or cloud. Everything stays on your own network.
 
-## What it does
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="docs/screenshots/sensePhone.png" alt="Sense screen using the phone"><br><sub><b>Sense</b> · phone WiFi</sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/senseEsp32.png" alt="Sense screen using an ESP32 node"><br><sub><b>Sense</b> · ESP32 sensor</sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/scan.png" alt="Scan screen"><br><sub><b>Scan</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/detect.png" alt="Detect screen"><br><sub><b>Detect</b></sub></td>
+  </tr>
+</table>
+<p align="center"><sub>Screenshots use sample (synthetic) data.</sub></p>
 
-| Tab | Purpose |
+## ✨ What you can do
+
+| | |
 |---|---|
-| **Sense** | Animated radar, motion level, confidence, 60 s motion history, vitals (when the source provides them) and a live CSI amplitude waterfall for ESP32 nodes. |
-| **Scan** | Every visible access point: SSID, BSSID, RSSI, channel, band, width, Wi-Fi generation, security, free-space distance estimate and hardware hints, plus a channel-spectrum chart for 2.4 / 5 / 6 GHz. |
-| **Detect** | Auto-detection of the scanning tool and an inventory of what was found: this phone's radio capabilities, RuView sensing servers and ESP32 nodes. |
-| **Settings** | Source override, scan interval, UDP port, server address/token. |
+| 📡 **Sense** | Watch a live radar that reacts when someone moves through the WiFi field. You also get a motion score, a 60-second history and, with a sensor that provides them, breathing and heart-rate estimates. |
+| 📶 **Scan** | See every nearby network: name, signal, channel, band (2.4 / 5 / 6 GHz), WiFi generation, security and a rough distance. A spectrum chart shows which channels are crowded. |
+| 🛰️ **Detect** | uSee finds the best sensing tool by itself: a RuView server, an ESP32 sensor or your phone's own WiFi. It also lists what your phone's WiFi chip supports. |
+| ⚙️ **Settings** | Pick a sensor yourself, change how often it scans, or connect to a server by address. |
 
-### Auto-detection of the scanning tool
+## 🚀 Get started in 2 minutes
 
-uSee looks for three kinds of sensor and uses the best one that is **live**
-(delivered data in the last 5 s):
+1. **Download** `uSee-<version>.apk` from the [latest release](https://github.com/2B-4G10/uSee/releases/latest) on your phone.
+2. **Open the file.** If Android asks, allow your browser or file manager to *install unknown apps*.
+3. **Launch uSee** and tap **Grant access**. Android requires Location permission before any app can read WiFi scan results. uSee does not record where you are.
+4. Make sure **WiFi** and **Location services** are on. uSee shows a banner if either one is off.
+5. Open **Sense**, keep still for about 5 seconds while it learns the room, then walk around and watch the radar react.
 
-1. **RuView sensing server** — found by mDNS (`_ruview._tcp`), by a read-only
-   sweep of `GET :8765/health` and `:8080/health` on the phone's private
-   subnet, or by manual entry. Streams `ws://<host>:8765/ws/sensing`.
-2. **ESP32 CSI node** — found when it streams RuView UDP frames
-   (`0xC5110001` CSI, `0xC5110002` vitals, `0xC5110004` fused vitals) to the
-   phone, by its read-only `GET :8032/ota/status` page, or as a hint when an
-   Espressif MAC prefix / `ruview-*` SSID shows up in the scan.
-3. **This phone's WiFi radio** — always available. The Detect tab reports the
-   radio's bands (2.4/5/6/60 GHz), supported Wi-Fi generations, 802.11mc RTT,
-   WiFi Aware/Direct, OS scan throttling and the current link.
+> **Updating:** install a newer APK over the old one. If Android says the app *conflicts with an existing package*, the new build has a different signature. Uninstall uSee first, then install the new APK.
 
-The choice can be pinned in Settings (Auto / Phone / ESP32 / Server).
+## 🧭 Which sensor is it using?
 
-### What each tier can and cannot do
+uSee always picks the best source that is sending data right now. The chip at the top right of the app shows which one:
 
-| Source | Signal | Can | Cannot |
-|---|---|---|---|
-| Phone | RSSI per AP | Flag movement that disturbs the WiFi path | See a still person, count people, estimate pose or vitals |
-| ESP32 | CSI per subcarrier | Finer motion score (computed in the app), edge vitals from the node | Be treated as a medical device |
-| Server | RuView pipeline | Whatever the server reports (presence, motion, vitals) | — values are shown as received |
+| Chip | Source | What it can tell you |
+|:---:|---|---|
+| 🟣 **Server** | A RuView sensing server on your network | Presence, motion and vitals from the full RuView system |
+| 🟢 **CSI** | An ESP32 RuView sensor streaming to your phone | Detailed signal data per WiFi subcarrier, a live heat-map, and vitals from the sensor |
+| 🔵 **RSSI only** | Just your phone | Movement that disturbs the WiFi signal near you |
 
-WiFi sensing is probabilistic and **not camera-grade**. The motion thresholds
-in `core/MotionEstimator.kt` are heuristics (CLAIMED behaviour, not a measured
-accuracy); no accuracy figure is asserted by this app.
+<details>
+<summary><b>Connect an ESP32 sensor</b></summary>
 
-Android only exposes RSSI to apps; stock phones cannot capture CSI. Android
-also limits foreground apps to 4 WiFi scans per 2 minutes, so the phone tier
-mostly samples the connected link's RSSI (~3 Hz) and uses multi-AP scans
-whenever the OS delivers them. Turning off *Developer options → WiFi scan
-throttling* lifts the limit.
+<br>
 
-## Install
-
-Grab `usee-apk` from the **Android APK** workflow run (or build it below) and
-sideload it: enable *Install unknown apps* for your file manager, open
-`app-release.apk`. Requires Android 8.0 (API 26) or newer.
-
-Permissions: **Location** (Android requires it to return scan results) and
-**Nearby WiFi devices** (Android 13+). Location services must be on for scan
-results. uSee never records position.
-
-## Connecting sensors
-
-**ESP32 node → phone.** Point the node's UDP target at the phone (its IP is
-shown on the Detect tab):
+Set up the sensor so it sends its data to your phone. Your phone's IP address is shown on the **Detect** tab:
 
 ```bash
-python firmware/esp32-csi-node/provision.py --port <serial> \
-  --target-ip <phone-ip> --target-port 5005
+python firmware/esp32-csi-node/provision.py --port <serial-port> --target-ip <phone-ip> --target-port 5005
 ```
 
-**Sensing server.** On the same LAN the app discovers the server by mDNS. The
-server's DNS-rebinding guard rejects unknown `Host` headers, so start it with
-the address the phone will use (the app shows this hint when it is rejected):
+Within a few seconds the chip switches to **CSI** and the heat-map appears on **Sense**.
+</details>
+
+<details>
+<summary><b>Connect a RuView sensing server</b></summary>
+
+<br>
+
+On the same WiFi network, uSee finds the server automatically. The server only accepts addresses it knows, so start it with the address your phone will use:
 
 ```bash
-sensing-server --allowed-host <server-lan-ip> ...
+sensing-server --allowed-host <server-ip>
 ```
 
-If the server has `RUVIEW_API_TOKEN` set, paste the token in Settings; it is
-sent as `Authorization: Bearer …` and kept in app-private storage, excluded
-from backups.
+If the server requires a token, paste it into **Settings → RuView sensing server**. You can also type the server's address there or on the **Detect** tab.
+</details>
 
-## Build
+## 🔒 Privacy
 
-Requirements: JDK 17+, Android SDK (platform 35, build-tools 35).
+- 🚫 **No camera, no microphone, no account.**
+- 🏠 **Local only.** uSee only talks to devices on your private home or office network. It sends nothing to the internet.
+- 👀 **Read-only.** When it searches your network for sensors it only *reads* status pages. It never changes another device.
+- 💤 **Off when hidden.** Scanning stops as soon as you leave the app.
+- 🔑 Any server token you enter stays on your phone and is left out of backups.
 
-```bash
-cd android
-./gradlew testDebugUnitTest      # JVM unit tests
-./gradlew lintRelease
-./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk
-```
+## ❓ FAQ
 
-Release signing reads `android/keystore.properties` (`storeFile`,
-`storePassword`, `keyAlias`, `keyPassword`) or the `USEE_KEYSTORE_FILE`,
-`USEE_KEYSTORE_PASSWORD`, `USEE_KEY_ALIAS`, `USEE_KEY_PASSWORD` environment
-variables. Without them the release APK is signed with the debug key — fine
-for sideloading, not for a store upload. Keystores are git-ignored.
+<details>
+<summary><b>Can uSee see people through walls like a camera?</b></summary>
 
-## Layout
+<br>
 
-```
-app/src/main/java/com/usee/scanner/
-  core/        pure Kotlin: packet decoders, motion estimator, WiFi math, OUI hints, IPv4 helpers
-  data/        Android adapters: WifiManager scanner, LAN discovery (mDNS + probes),
-               UDP CSI receiver, sensing-server WebSocket client, settings
-  ui/          AppViewModel (source arbitration), theme, components, screens
-app/src/test/  unit tests for decoders, estimator, WiFi math, server frame parsing
-```
+No. WiFi sensing is not camera-grade. With only your phone, uSee can notice that **something is moving** because movement disturbs the WiFi signal. It cannot see a person who is perfectly still, count people or show their shape. An ESP32 sensor or a RuView server gives much richer data, but the results are still estimates.
+</details>
 
-## Security and privacy
+<details>
+<summary><b>Why does the Scan list update slowly?</b></summary>
 
-- Network discovery is read-only (`GET` only) and restricted to RFC 1918
-  subnets; larger subnets are narrowed to the phone's /24.
-- UDP input is validated against the RuView magics and the datagram length
-  before any field is used.
-- Radios run only while the app is in the foreground.
-- No analytics, no cloud calls; cleartext is allowed only because LAN
-  sensors speak plain HTTP/WebSocket.
+<br>
 
-Author: Faisal AlDossary. Built on RuView (MIT License).
+Android lets an app scan for networks only **4 times every 2 minutes**. Between scans, uSee watches the signal of the network you're connected to several times a second. To remove the limit, go to *Settings → Developer options → WiFi scan throttling* and turn it off.
+</details>
+
+<details>
+<summary><b>The radar says "Calibrating" or reacts to nothing.</b></summary>
+
+<br>
+
+Tap **Recalibrate**, leave the room or stay still for a few seconds, and let uSee learn the quiet signal level again. The motion levels are tuned estimates, not certified measurements. Results depend on your router, the walls and the distance.
+</details>
+
+<details>
+<summary><b>Are the breathing and heart-rate numbers medical?</b></summary>
+
+<br>
+
+No. They are experimental estimates from the sensor and are only shown when a sensor provides them. Never use them for health decisions.
+</details>
+
+<details>
+<summary><b>How accurate is the distance on the Scan tab?</b></summary>
+
+<br>
+
+It's a rough guide. It ignores walls and antennas, so treat it as "near or far", not as an exact number of metres.
+</details>
+
+## 📋 Requirements
+
+- Android **8.0 (Oreo)** or newer, with WiFi
+- **Location** permission, plus **Nearby WiFi devices** on Android 13+
+- Optional: a RuView ESP32 sensor or a RuView sensing server for richer sensing
+
+---
+
+<p align="center">
+  <sub>Made by <b>Faisal AlDossary</b> · Built on <a href="../README.md">RuView</a> (MIT License)</sub><br>
+  <sub>Developers: <a href="docs/DEVELOPING.md">build &amp; architecture</a> · <a href="docs/MAINTAINING.md">updates, releases &amp; repository lock</a></sub>
+</p>

@@ -5,6 +5,7 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import com.usee.scanner.core.NetUtil
+import com.usee.scanner.core.UpstreamContract
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -133,7 +134,7 @@ class LanDiscovery(private val context: Context) {
         withContext(probeDispatcher) {
             val hits = mutableListOf<ProbeHit>()
             if (portOpen(ip, ESP32_PORT)) {
-                val body = httpGet("http://${NetUtil.hostForUrl(ip)}:$ESP32_PORT/ota/status")
+                val body = httpGet("http://${NetUtil.hostForUrl(ip)}:$ESP32_PORT${UpstreamContract.ESP32_STATUS_PATH}")
                 val json = body?.second?.let { runCatching { JSONObject(it) }.getOrNull() }
                 if (json != null && json.has("running_partition")) {
                     hits += ProbeHit.Esp32(ip, json.optString("version").ifBlank { null })
@@ -141,7 +142,7 @@ class LanDiscovery(private val context: Context) {
             }
             for (port in (SERVER_PORTS + extraServerPorts).distinct()) {
                 if (!portOpen(ip, port)) continue
-                val res = httpGet("http://${NetUtil.hostForUrl(ip)}:$port/health") ?: continue
+                val res = httpGet("http://${NetUtil.hostForUrl(ip)}:$port${UpstreamContract.SERVER_HEALTH_PATH}") ?: continue
                 val (code, body) = res
                 val json = runCatching { JSONObject(body) }.getOrNull()
                 val isServer = json != null && json.optString("status") == "ok" && json.has("source")
@@ -195,10 +196,10 @@ class LanDiscovery(private val context: Context) {
     }
 
     companion object {
-        const val SERVICE_TYPE = "_ruview._tcp."
-        const val ESP32_PORT = 8032
-        const val WS_PORT = 8765
-        val SERVER_PORTS = listOf(WS_PORT, 8080)
+        const val SERVICE_TYPE = UpstreamContract.MDNS_SERVICE_TYPE
+        const val ESP32_PORT = UpstreamContract.ESP32_STATUS_PORT
+        const val WS_PORT = UpstreamContract.SERVER_WS_PORT
+        val SERVER_PORTS = listOf(WS_PORT, UpstreamContract.SERVER_HTTP_PORT)
         const val CONNECT_TIMEOUT_MS = 350
         const val READ_TIMEOUT_MS = 1200
         const val MAX_BODY = 8 * 1024

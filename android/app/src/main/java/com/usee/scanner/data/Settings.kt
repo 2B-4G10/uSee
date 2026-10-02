@@ -2,6 +2,7 @@ package com.usee.scanner.data
 
 import android.content.Context
 import androidx.core.content.edit
+import com.usee.scanner.core.UpstreamContract
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,9 +10,9 @@ import kotlinx.coroutines.flow.asStateFlow
 data class AppSettings(
     val mode: SensorMode = SensorMode.AUTO,
     val scanIntervalSec: Int = 30,
-    val udpPort: Int = 5005,
+    val udpPort: Int = UpstreamContract.ESP32_UDP_PORT,
     val serverHost: String = "",
-    val serverWsPort: Int = 8765,
+    val serverWsPort: Int = UpstreamContract.SERVER_WS_PORT,
     val serverToken: String = "",
     val autoSweep: Boolean = true,
     val keepScreenOn: Boolean = false,
@@ -26,9 +27,9 @@ class SettingsStore(context: Context) {
     private fun load() = AppSettings(
         mode = runCatching { SensorMode.valueOf(prefs.getString("mode", "AUTO")!!) }.getOrDefault(SensorMode.AUTO),
         scanIntervalSec = prefs.getInt("scanIntervalSec", 30).coerceIn(5, 300),
-        udpPort = prefs.getInt("udpPort", 5005).coerceIn(1024, 65535),
+        udpPort = prefs.getInt("udpPort", UpstreamContract.ESP32_UDP_PORT).coerceIn(1024, 65535),
         serverHost = prefs.getString("serverHost", "") ?: "",
-        serverWsPort = prefs.getInt("serverWsPort", 8765).coerceIn(1, 65535),
+        serverWsPort = prefs.getInt("serverWsPort", UpstreamContract.SERVER_WS_PORT).coerceIn(1, 65535),
         serverToken = prefs.getString("serverToken", "") ?: "",
         autoSweep = prefs.getBoolean("autoSweep", true),
         keepScreenOn = prefs.getBoolean("keepScreenOn", false),

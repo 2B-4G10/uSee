@@ -229,9 +229,14 @@ their governed inputs change.
 ### Android app (uSee)
 
 ```bash
+python3 android/tools/upstream_contract.py   # wire contract vs. firmware/server sources
 cd android
 ./gradlew testDebugUnitTest lintRelease assembleRelease
 ```
+
+Changing a firmware packet, server port/route or decoded JSON field requires
+`python3 android/tools/upstream_contract.py --update` and, for layout changes,
+an update of the app decoder. Never hand-edit `UpstreamContract.kt`.
 
 A built APK or a JVM render is not device evidence; WiFi behaviour must be
 checked on a real phone.

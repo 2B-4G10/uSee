@@ -1,6 +1,7 @@
 package com.usee.scanner.data
 
 import com.usee.scanner.core.NetUtil
+import com.usee.scanner.core.UpstreamContract
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -50,7 +51,7 @@ class SensingServerClient(private val scope: CoroutineScope) {
             _state.value = ServerLink(error = "Invalid server address")
             return
         }
-        val target = "ws://${NetUtil.hostForUrl(host)}:$wsPort/ws/sensing"
+        val target = "ws://${NetUtil.hostForUrl(host)}:$wsPort${UpstreamContract.SERVER_WS_PATH}"
         if (_state.value.target == target && loop?.isActive == true) return
         disconnect()
         val gen = ++generation

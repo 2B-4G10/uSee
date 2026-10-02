@@ -46,12 +46,12 @@ data class VitalsPacket(
 data class OtherRuViewPacket(override val nodeId: Int, val magic: Long) : RuViewPacket
 
 object CsiPackets {
-    const val MAGIC_CSI = 0xC5110001L
-    const val MAGIC_VITALS = 0xC5110002L
-    const val MAGIC_FUSED = 0xC5110004L
+    const val MAGIC_CSI = UpstreamContract.CSI_MAGIC
+    const val MAGIC_VITALS = UpstreamContract.VITALS_MAGIC
+    const val MAGIC_FUSED = UpstreamContract.FUSED_MAGIC
     private const val FAMILY_MASK = 0xFFFF0000L
     private const val FAMILY = 0xC5110000L
-    const val CSI_HEADER = 20
+    const val CSI_HEADER = UpstreamContract.CSI_HEADER_SIZE
     /** Upper bound on subcarriers we accept; guards against malformed headers. */
     const val MAX_SUBCARRIERS = 1024
 

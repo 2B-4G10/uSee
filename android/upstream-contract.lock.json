@@ -1,0 +1,132 @@
+{
+  "presence": {
+    "esp32_status_key_running_partition": true,
+    "health_source_key": true,
+    "health_status_ok": true,
+    "host_guard_421": true,
+    "host_guard_marker": true,
+    "motion_absent": true,
+    "motion_present_moving": true,
+    "motion_present_still": true,
+    "ws_bearer_header": true
+  },
+  "structs": {
+    "ClassificationInfo": {
+      "fields": [
+        "motion_level",
+        "presence",
+        "confidence"
+      ],
+      "sha256": "6c44f4cdc0b583db531b1b3e4a57e0ca67207e0c9c176dceb12bcee41238fc35"
+    },
+    "FeatureInfo": {
+      "fields": [
+        "mean_rssi",
+        "variance",
+        "motion_band_power",
+        "breathing_band_power",
+        "dominant_freq_hz",
+        "change_points",
+        "spectral_power"
+      ],
+      "sha256": "e6850fda52bb83b48529fd1b82214a15d32feb1ebb1dd115f9937e87d1e8d35a"
+    },
+    "SensingUpdate": {
+      "fields": [
+        "msg_type",
+        "timestamp",
+        "source",
+        "tick",
+        "nodes",
+        "features",
+        "classification",
+        "signal_field",
+        "vital_signs",
+        "calibrated_presence_evidence",
+        "enhanced_motion",
+        "enhanced_breathing",
+        "posture",
+        "signal_quality_score",
+        "quality_verdict",
+        "bssid_count",
+        "pose_keypoints",
+        "model_status",
+        "persons",
+        "estimated_persons",
+        "node_features",
+        "room_inference"
+      ],
+      "sha256": "239e7fb4058760a821e810f852fa0db68bb54d4366a0329cfdc177041131b0bb"
+    },
+    "VitalSigns": {
+      "fields": [
+        "breathing_rate_bpm",
+        "heart_rate_bpm",
+        "breathing_confidence",
+        "heartbeat_confidence",
+        "signal_quality"
+      ],
+      "sha256": "6519b48f2ace0e6ee53705d121382b5db27e436efbe9daa6f8212e1c86e7b3b3"
+    },
+    "csi_frame_layout": {
+      "fields": [],
+      "sha256": "3d6d4eb59c15eae775b8e791e9ce9e4e32f08913a0872e0866c4ef17643e777c"
+    },
+    "edge_fused_vitals_pkt_t": {
+      "fields": [
+        "magic",
+        "node_id",
+        "flags",
+        "breathing_rate",
+        "heartrate",
+        "rssi",
+        "n_persons",
+        "mmwave_type",
+        "fusion_confidence",
+        "motion_energy",
+        "presence_score",
+        "timestamp_ms",
+        "mmwave_hr_bpm",
+        "mmwave_br_bpm",
+        "mmwave_distance",
+        "mmwave_targets",
+        "mmwave_confidence",
+        "reserved3",
+        "reserved4"
+      ],
+      "sha256": "85b0ce2c974754ae875192015ec920019aeba217ae9a733d230ea0fc6f7cbc47"
+    },
+    "edge_vitals_pkt_t": {
+      "fields": [
+        "magic",
+        "node_id",
+        "flags",
+        "breathing_rate",
+        "heartrate",
+        "rssi",
+        "n_persons",
+        "reserved",
+        "motion_energy",
+        "presence_score",
+        "timestamp_ms",
+        "reserved2"
+      ],
+      "sha256": "eb1be3191bd07c909ce9e97a271d7d670aea67ad594a53824b6420a13c369609"
+    }
+  },
+  "values": {
+    "CSI_HEADER_SIZE": 20,
+    "CSI_MAGIC": "0xC5110001",
+    "ESP32_STATUS_PATH": "/ota/status",
+    "ESP32_STATUS_PORT": 8032,
+    "ESP32_UDP_PORT": 5005,
+    "FUSED_MAGIC": "0xC5110004",
+    "MDNS_SERVICE_TYPE": "_ruview._tcp.local.",
+    "SERVER_HEALTH_PATH": "/health",
+    "SERVER_HTTP_PORT": 8080,
+    "SERVER_UDP_PORT": 5005,
+    "SERVER_WS_PATH": "/ws/sensing",
+    "SERVER_WS_PORT": 8765,
+    "VITALS_MAGIC": "0xC5110002"
+  }
+}
