@@ -23,12 +23,12 @@ conflicting files.
 ## Releasing
 
 1. Bump `versionCode` and `versionName` in `app/build.gradle.kts`.
-2. Merge to `main`, then tag and push:
-   ```bash
-   git tag usee-v<versionName> && git push origin usee-v<versionName>
-   ```
-3. `.github/workflows/usee-release.yml` tests, builds and publishes a GitHub
-   release with `uSee-<version>.apk` and its SHA-256.
+2. Merge to `main`. `.github/workflows/usee-release.yml` notices the new
+   version, runs the tests, builds the APK and publishes the GitHub release
+   `usee-v<versionName>` with `uSee-<version>.apk` and its SHA-256.
+
+To rebuild an existing release, open *Actions → uSee release → Run workflow*,
+or push the matching `usee-v*` tag.
 
 ## One-time repository setup (owner)
 

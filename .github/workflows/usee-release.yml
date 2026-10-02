@@ -1,15 +1,16 @@
 name: uSee release
 
-# Publishes the Android app when a `usee-v<versionName>` tag is pushed,
-# e.g. `git tag usee-v1.1.0 && git push origin usee-v1.1.0`.
+# Publishes the Android app as a GitHub release `usee-v<versionName>`:
+#  - automatically when a new versionName reaches main (no tag push needed),
+#  - when a matching `usee-v*` tag is pushed, or
+#  - manually ("Run workflow") for the version currently on the chosen ref.
+# An existing release is only re-uploaded on a tag push or manual run.
 on:
   push:
+    branches: [main]
+    paths: ["android/app/build.gradle.kts"]
     tags: ["usee-v*"]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Existing usee-v* tag to (re)publish"
-        required: true
 
 permissions:
   contents: write
@@ -22,34 +23,46 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ inputs.tag || github.ref }}
 
-      - name: Check tag matches app version
+      - name: Resolve version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          case "$TAG" in usee-v*) ;; *) echo "::error::tag must start with usee-v"; exit 1 ;; esac
           version="$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' android/app/build.gradle.kts)"
-          if [ "usee-v$version" != "$TAG" ]; then
-            echo "::error::tag $TAG does not match versionName $version"
+          tag="usee-v$version"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match versionName $version"
             exit 1
           fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
+          publish=true
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = branch ] && gh release view "$tag" >/dev/null 2>&1; then
+            publish=false
+            echo "Release $tag already exists; nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "VERSION=$version"
+            echo "TAG=$tag"
+          } >> "$GITHUB_ENV"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
       - name: Upstream contract
+        if: steps.version.outputs.publish == 'true'
         run: python3 android/tools/upstream_contract.py
 
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        if: steps.version.outputs.publish == 'true'
         with:
           distribution: temurin
           java-version: "17"
 
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        if: steps.version.outputs.publish == 'true'
 
       - name: Test, lint and build
+        if: steps.version.outputs.publish == 'true'
         working-directory: android
         env:
           USEE_KEYSTORE_BASE64: ${{ secrets.USEE_KEYSTORE_BASE64 }}
@@ -70,6 +83,7 @@ jobs:
           (cd "$RUNNER_TEMP" && sha256sum "uSee-$VERSION.apk" > "uSee-$VERSION.apk.sha256")
 
       - name: Publish GitHub release
+        if: steps.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -92,5 +106,5 @@ jobs:
             gh release edit "$TAG" --notes-file "$notes"
           else
             gh release create "$TAG" "$RUNNER_TEMP/uSee-$VERSION.apk" "$RUNNER_TEMP/uSee-$VERSION.apk.sha256" \
-              --title "uSee $VERSION" --notes-file "$notes" --latest
+              --target "$GITHUB_SHA" --title "uSee $VERSION" --notes-file "$notes" --latest
           fi
