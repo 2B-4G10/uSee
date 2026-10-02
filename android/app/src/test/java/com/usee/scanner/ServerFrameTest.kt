@@ -28,8 +28,8 @@ class ServerFrameTest {
         assertEquals(0.82, f.confidence, 1e-9)
         assertEquals(-51.5, f.meanRssi!!, 1e-9)
         assertEquals(14.2, f.vitals!!.breathingBpm!!, 1e-9)
-        assertNull(f.vitals!!.heartRateBpm)
-        assertEquals(1, f.vitals!!.persons)
+        assertNull(f.vitals.heartRateBpm)
+        assertEquals(1, f.vitals.persons)
         assertEquals(1, f.nodeCount)
     }
 

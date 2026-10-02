@@ -138,7 +138,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         stop()
-        super.onCleared()
     }
 
     fun refreshScan() = wifi.requestScan()
