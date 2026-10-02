@@ -1,0 +1,43 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer radio arcs (top and bottom) forming an eye made of waves -->
+    <path
+        android:strokeColor="#2EE6D6"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M30,54 Q54,28 78,54" />
+    <path
+        android:strokeColor="#2EE6D6"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M30,54 Q54,80 78,54" />
+    <path
+        android:strokeColor="#7C5CFF"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:strokeAlpha="0.85"
+        android:pathData="M24,54 Q54,18 84,54" />
+    <path
+        android:strokeColor="#7C5CFF"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:strokeAlpha="0.85"
+        android:pathData="M24,54 Q54,90 84,54" />
+    <!-- Iris ring -->
+    <path
+        android:strokeColor="#2EE6D6"
+        android:strokeWidth="2.6"
+        android:fillColor="#00000000"
+        android:pathData="M54,44 A10,10 0 1,1 53.99,44 Z" />
+    <!-- Pupil -->
+    <path
+        android:fillColor="#E8FFFD"
+        android:pathData="M54,49.5 A4.5,4.5 0 1,1 53.99,49.5 Z" />
+</vector>

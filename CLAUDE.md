@@ -39,6 +39,7 @@ retrieved memories, generated proposals, and old test counts are not.
 | `harness/ruview/` | `@ruvnet/ruview` CLI, MCP server, shared brain, and flywheel |
 | `harness/homecore/` | `homecore` CLI/MCP, WASM kernel adapter, and reviewed brain |
 | `plugins/ruview/` | Host plugin assets and Codex prompts |
+| `android/` | uSee native Android app (Kotlin/Compose WiFi scanner and sensor client) |
 | `docs/adr/` | Architecture decisions; prefer status in each ADR over summaries |
 | `.github/workflows/` | Authoritative CI and release gates |
 
@@ -224,6 +225,16 @@ python -m pytest tests/ -x -q
 
 The proof must print `VERDICT: PASS`. Regenerate witness artifacts only when
 their governed inputs change.
+
+### Android app (uSee)
+
+```bash
+cd android
+./gradlew testDebugUnitTest lintRelease assembleRelease
+```
+
+A built APK or a JVM render is not device evidence; WiFi behaviour must be
+checked on a real phone.
 
 ### Firmware and hardware
 

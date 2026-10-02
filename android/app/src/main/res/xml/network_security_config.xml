@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RuView sensing servers and ESP32 nodes live on the local network and speak
+  plain HTTP / WebSocket (ws://). Cleartext is therefore permitted; the app only
+  contacts hosts the user discovered on their own LAN or typed in explicitly.
+-->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
