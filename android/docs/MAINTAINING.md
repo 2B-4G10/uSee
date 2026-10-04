@@ -30,6 +30,19 @@ conflicting files.
 To rebuild an existing release, open *Actions → uSee release → Run workflow*,
 or push the matching `usee-v*` tag.
 
+### Only app releases
+
+The Releases page holds uSee releases only, each with an APK attached:
+
+- Upstream jobs that publish server releases (`ci.yml`), open submodule PRs
+  every 6 hours (`update-submodules.yml`) or push traffic snapshots
+  (`clone-tracking.yml`) run only in `ruvnet/RuView`. Submodule bumps reach
+  this fork through the weekly upstream sync.
+- `.github/workflows/release-hygiene.yml` runs after CI and release runs on
+  `main` and daily. It deletes every published release without an `.apk`
+  asset, together with its tag, and keeps the newest `usee-v*` release marked
+  as latest. *Run workflow* with **dry run** lists what it would delete.
+
 ## One-time repository setup (owner)
 
 These are GitHub settings and must be set in the web UI.

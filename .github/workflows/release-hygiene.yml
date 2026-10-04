@@ -1,0 +1,79 @@
+name: Release hygiene
+
+# Keeps the Releases page limited to app releases: any published release
+# without an attached .apk is deleted together with its tag, and the newest
+# uSee release is kept marked as "latest" (the README download link uses it).
+
+on:
+  workflow_run:
+    workflows: ["Continuous Integration", "uSee release"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only list what would be deleted"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-hygiene
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    # The upstream project publishes server and firmware releases without APKs.
+    if: github.repository != 'ruvnet/RuView'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      DRY_RUN: ${{ inputs.dry_run || false }}
+    steps:
+      - name: Delete releases without an APK
+        run: |
+          set -euo pipefail
+          # Drafts are skipped: a release being created uploads its assets
+          # while still in draft state.
+          gh api --paginate "repos/$REPO/releases?per_page=100" \
+            --jq '.[] | select(.draft | not)
+                      | select([.assets[].name | endswith(".apk")] | any | not)
+                      | .tag_name' > "$RUNNER_TEMP/junk.txt"
+
+          {
+            echo "## Release hygiene"
+            if [ ! -s "$RUNNER_TEMP/junk.txt" ]; then
+              echo "Nothing to delete: every release has an APK attached."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "- would delete \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+            else
+              gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag
+              echo "- deleted \`$tag\` (no APK attached)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done < "$RUNNER_TEMP/junk.txt"
+
+      - name: Keep the newest uSee release marked as latest
+        if: inputs.dry_run != true
+        run: |
+          set -euo pipefail
+          newest=$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+            --jq '.[] | select((.draft or .prerelease) | not)
+                      | select(.tag_name | startswith("usee-v")) | .tag_name' \
+            | sed 's/^usee-v//' | sort -V | tail -n 1)
+          [ -n "$newest" ] || { echo "No uSee release published yet."; exit 0; }
+          latest=$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null || true)
+          if [ "$latest" != "usee-v$newest" ]; then
+            gh release edit "usee-v$newest" --repo "$REPO" --latest
+            echo "- marked \`usee-v$newest\` as latest (was \`${latest:-none}\`)" >> "$GITHUB_STEP_SUMMARY"
+          fi
