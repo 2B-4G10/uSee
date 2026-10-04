@@ -41,7 +41,9 @@ The Releases page holds uSee releases only, each with an APK attached:
 - `.github/workflows/release-hygiene.yml` runs after CI and release runs on
   `main` and daily. It deletes every published release without an `.apk`
   asset, together with its tag, and keeps the newest `usee-v*` release marked
-  as latest. *Run workflow* with **dry run** lists what it would delete.
+  as latest. *Run workflow* with **dry run** lists what it would delete;
+  **delete release** removes one named release and its tag, such as a
+  superseded `usee-v*` build.
 
 ## One-time repository setup (owner)
 
