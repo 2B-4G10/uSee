@@ -17,6 +17,10 @@ on:
         description: "Only list what would be deleted"
         type: boolean
         default: false
+      delete_release:
+        description: "Also delete this release and its tag (e.g. usee-v1.1.0)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -35,7 +39,22 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       DRY_RUN: ${{ inputs.dry_run || false }}
+      DELETE_RELEASE: ${{ inputs.delete_release || '' }}
     steps:
+      - name: Delete the requested release
+        if: inputs.delete_release != ''
+        run: |
+          set -euo pipefail
+          case "$DELETE_RELEASE" in
+            *[!A-Za-z0-9._-]*) echo "::error::Invalid tag name: $DELETE_RELEASE"; exit 1 ;;
+          esac
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "- would delete \`$DELETE_RELEASE\` (requested)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh release delete "$DELETE_RELEASE" --repo "$REPO" --yes --cleanup-tag
+            echo "- deleted \`$DELETE_RELEASE\` (requested)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Delete releases without an APK
         run: |
           set -euo pipefail
