@@ -2795,6 +2795,82 @@ mod calibration_expiry_tests {
         assert!(expired.calibrated_presence_evidence(5, 77, u64::MAX / 2).is_none());
     }
 
+    fn qualified_vital_candidates() -> VitalSigns {
+        VitalSigns {
+            breathing_rate_bpm: Some(15.0),
+            heart_rate_bpm: Some(70.0),
+            breathing_confidence: 0.9,
+            heartbeat_confidence: 0.9,
+            signal_quality: 0.9,
+        }
+    }
+
+    fn state_with_runtime_window() -> AppStateInner {
+        let mut state = state_with_receipt();
+        let model = state.field_model.as_mut().unwrap();
+        let mut snapshot = model.export_snapshot().unwrap();
+        snapshot.modes.baseline_runtime_window_size = Some(50);
+        *model = FieldModel::from_snapshot(snapshot, 1_500_000).unwrap();
+        state
+    }
+
+    #[test]
+    fn calibrated_empty_blocks_vitals_even_when_room_heuristic_reports_one() {
+        let state = state_with_runtime_window();
+        assert_eq!(state.person_count_at(1_500), 0);
+        let candidates = qualified_vital_candidates();
+        // This is the old live WebSocket gate: it publishes despite empty RF.
+        assert!(vitals_for_publication(&candidates, true, 1).is_some());
+        assert!(calibrated_vitals_for_publication(&state, &candidates, 1, 1_500).is_none());
+    }
+
+    #[test]
+    fn calibrated_single_occupant_preserves_quality_and_room_gates() {
+        let mut state = state_with_runtime_window();
+        let baseline = state.field_model.as_ref().unwrap().modes().unwrap().baseline[0].clone();
+        for offset in [0.1, 0.2, 0.3, 0.5, 0.7, 1.0] {
+            state.node_states.get_mut(&5).unwrap().field_model_history =
+                (0..50).map(|_| baseline.iter().map(|value| value + offset).collect()).collect();
+            if state.person_count_at(1_500) == 1 { break; }
+        }
+        assert_eq!(state.person_count_at(1_500), 1);
+        let candidates = qualified_vital_candidates();
+        assert!(calibrated_vitals_for_publication(&state, &candidates, 1, 1_500).is_some());
+        for count in [0, 2, 3] {
+            assert!(calibrated_vitals_for_publication(&state, &candidates, count, 1_500).is_none());
+        }
+        let weak = VitalSigns { signal_quality: 0.1, ..candidates.clone() };
+        assert!(calibrated_vitals_for_publication(&state, &weak, 1, 1_500).is_none());
+        state.bootstrap_baseline_active = true;
+        assert!(calibrated_vitals_for_publication(&state, &candidates, 1, 1_500).is_none());
+        state.bootstrap_baseline_active = false;
+        assert!(calibrated_vitals_for_publication(&state, &candidates, 1, u64::MAX / 2).is_none());
+        state.calibration_model_receipt = None;
+        assert!(calibrated_vitals_for_publication(&state, &candidates, 1, 1_500).is_none());
+    }
+
+    #[test]
+    fn calibrated_vitals_require_a_complete_fresh_unfaulted_source_window() {
+        let mut state = state_with_runtime_window();
+        let candidates = qualified_vital_candidates();
+        // Use a positive source window so refusals aren't merely empty-room gating.
+        let baseline = state.field_model.as_ref().unwrap().modes().unwrap().baseline[0].clone();
+        state.node_states.get_mut(&5).unwrap().field_model_history =
+            (0..50).map(|_| baseline.iter().map(|value| value + 0.3).collect()).collect();
+        assert_eq!(state.person_count_at(1_500), 1);
+        assert!(calibrated_vitals_for_publication(&state, &candidates, 1, 1_500).is_some());
+        state.calibration_sequence_fault_node_ids.insert(5);
+        assert!(calibrated_vitals_for_publication(&state, &candidates, 1, 1_500).is_none());
+        state.calibration_sequence_fault_node_ids.clear();
+        let node = state.node_states.get_mut(&5).unwrap();
+        node.field_model_latest_seen = Some(std::time::Instant::now() - ESP32_OFFLINE_TIMEOUT);
+        assert!(calibrated_vitals_for_publication(&state, &candidates, 1, 1_500).is_none());
+        let node = state.node_states.get_mut(&5).unwrap();
+        node.field_model_latest_seen = Some(std::time::Instant::now());
+        node.field_model_history.pop_front();
+        assert!(calibrated_vitals_for_publication(&state, &candidates, 1, 1_500).is_none());
+    }
+
     #[test]
     fn bootstrap_field_model_remains_negative_only_for_person_count() {
         let runtime = state_with_model(false);
@@ -7274,6 +7350,32 @@ fn vitals_for_publication(
     })
 }
 
+/// The debounced room heuristic can remain positive in an empty room. It
+/// cannot authorize numeric rates when the bound field model says absent.
+/// Require both the existing room gate and a fresh, complete model window;
+/// never use a heuristic fallback as calibrated single-occupant evidence.
+fn calibrated_vitals_for_publication(
+    state: &AppStateInner,
+    candidates: &VitalSigns,
+    room_person_count: usize,
+    observed_at_unix_ms: u64,
+) -> Option<VitalSigns> {
+    if room_person_count != 1 || !state.calibration_sequence_fault_node_ids.is_empty() {
+        return None;
+    }
+    let binding = state.calibration_grid_binding?;
+    let window_size = state.field_model.as_ref()?.modes()?.baseline_runtime_window_size?;
+    if !state.field_model_holdout_ready(binding, window_size, std::time::Instant::now()) {
+        return None;
+    }
+    let evidence = state.calibrated_presence_evidence(
+        binding.source_node_id,
+        state.tick,
+        observed_at_unix_ms,
+    )?;
+    vitals_for_publication(candidates, true, evidence.person_count)
+}
+
 fn edge_vitals_message_for_publication(
     raw: &Esp32VitalsPacket,
     published_vitals: Option<&VitalSigns>,
@@ -9173,12 +9275,11 @@ async fn vital_signs_endpoint(State(state): State<SharedState>) -> Json<serde_js
     let s = state.read().await;
     let observed_at_unix_ms = chrono::Utc::now().timestamp_millis().max(0) as u64;
     let person_count = s.person_count_at(observed_at_unix_ms);
-    let explicit_calibration_fresh =
-        s.explicit_calibration_fresh_at(observed_at_unix_ms);
-    let published = vitals_for_publication(
+    let published = calibrated_vitals_for_publication(
+        &s,
         &s.latest_vitals,
-        explicit_calibration_fresh,
         person_count,
+        observed_at_unix_ms,
     );
     let (br_len, br_cap, hb_len, hb_cap) = s.vital_detector.buffer_status();
     Json(serde_json::json!({
@@ -10012,10 +10113,11 @@ async fn udp_receiver_task(
                     };
                     let explicit_calibration_fresh =
                         s.explicit_calibration_fresh_at(observed_at_unix_ms);
-                    let published_vitals = vitals_for_publication(
+                    let published_vitals = calibrated_vitals_for_publication(
+                        &s,
                         &vital_candidates,
-                        explicit_calibration_fresh,
                         total_persons,
+                        observed_at_unix_ms,
                     );
 
                     // Keep the legacy edge_vitals stream aligned with the
@@ -10500,12 +10602,11 @@ async fn udp_receiver_task(
                         now,
                         observed_at_unix_ms,
                     );
-                    let explicit_calibration_fresh =
-                        s.explicit_calibration_fresh_at(observed_at_unix_ms);
-                    let published_vitals = vitals_for_publication(
+                    let published_vitals = calibrated_vitals_for_publication(
+                        &s,
                         &vitals,
-                        explicit_calibration_fresh,
                         total_persons,
+                        observed_at_unix_ms,
                     );
 
                     let calibrated_presence_evidence = s.calibrated_presence_evidence(
