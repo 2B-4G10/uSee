@@ -125,7 +125,10 @@ def extract(repo: Path) -> dict:
         if not out["presence"][name]:
             out["errors"].append(f"marker {name}: no longer found in {rel}")
     for name, (rel, rx, kind, _used) in STRUCTS.items():
-        m = re.search(rx, read(repo, rel) or "")
+        text = read(repo, rel) or ""
+        # Doc comments may contain braces (e.g. JSON examples), which would
+        # end a `[^{}]*` body early; only the layout comment is matched raw.
+        m = re.search(rx, text if kind == "doc" else strip_comments(text))
         if not m:
             out["errors"].append(f"struct {name}: not found in {rel}")
             continue

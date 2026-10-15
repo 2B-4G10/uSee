@@ -46,6 +46,11 @@ class ContractDrift(unittest.TestCase):
         self.mutate(f"{uc.SRV}/vital_signs.rs", r"/// Overall signal quality", "/// reworded comment")
         self.assertEqual(self.run_check(), 0)
 
+    def test_braces_in_doc_comments_are_ignored(self):
+        self.mutate(f"{uc.SRV}/main.rs", r"(\bstruct\s+SensingUpdate\s*\{)",
+                    "\\1\n    /// Example: `{room:{level}}`.\n    // {\n    /* } */")
+        self.assertEqual(self.run_check(), 0)
+
     def test_port_change_is_auto_updatable(self):
         self.mutate(f"{uc.SRV}/main.rs", r'default_value = "8765"\)\]', 'default_value = "9000")]')
         self.assertEqual(self.run_check(), 3)
