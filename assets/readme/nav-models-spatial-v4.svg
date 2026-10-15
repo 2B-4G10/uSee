@@ -25,6 +25,22 @@ text{font-family:"Avenir Next","Segoe UI Variable Display","Segoe UI",Helvetica,
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @keyframes trace{0%,100%{stroke-dashoffset:0}50%{stroke-dashoffset:90}}
 
 @media(prefers-reduced-motion:reduce){*{animation:none!important}}
