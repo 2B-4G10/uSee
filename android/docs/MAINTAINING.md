@@ -24,8 +24,10 @@ commit**.
 The run stays green unless the workflow itself breaks. When something needs
 you (a merge conflict, a rejected push, a pull request that could not be
 opened), it opens an issue labelled `upstream-sync` with the details and a
-one-click link, and closes that issue once a sync PR is open again. Pushes
-and PRs try `UPSTREAM_SYNC_TOKEN` first and fall back to the built-in token.
+one-click link, and closes that issue once a sync PR is open again. Forks
+have Issues disabled by default; the report is then posted as a comment on
+the latest `main` commit instead (once per upstream revision). Pushes and PRs
+try `UPSTREAM_SYNC_TOKEN` first and fall back to the built-in token.
 
 ## Releasing
 
