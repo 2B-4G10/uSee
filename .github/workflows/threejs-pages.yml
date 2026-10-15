@@ -26,6 +26,8 @@ concurrency:
 
 jobs:
   build-and-deploy:
+    # Upstream demo site; forks would push an unrelated gh-pages branch.
+    if: github.repository == 'ruvnet/RuView'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
