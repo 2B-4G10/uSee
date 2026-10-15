@@ -43,6 +43,7 @@
         "signal_field",
         "vital_signs",
         "calibrated_presence_evidence",
+        "detector_diagnostics",
         "enhanced_motion",
         "enhanced_breathing",
         "posture",
@@ -54,9 +55,11 @@
         "persons",
         "estimated_persons",
         "node_features",
-        "room_inference"
+        "room_inference",
+        "classifier",
+        "activity"
       ],
-      "sha256": "239e7fb4058760a821e810f852fa0db68bb54d4366a0329cfdc177041131b0bb"
+      "sha256": "5169a7f530333274a8552203c0761c00101ac8461d8d0912c7954058a40c8d15"
     },
     "VitalSigns": {
       "fields": [
