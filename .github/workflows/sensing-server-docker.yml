@@ -46,6 +46,8 @@ concurrency:
 
 jobs:
   build-and-publish:
+    # Publishes ruvnet images; forks have no registry access.
+    if: github.repository == 'ruvnet/RuView'
     name: build · push · smoke-test
     runs-on: ubuntu-latest
     steps:
