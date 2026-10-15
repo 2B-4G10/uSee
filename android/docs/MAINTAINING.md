@@ -12,13 +12,20 @@ manually from the Actions tab). It:
 2. merges it into the `upstream-sync` branch (a merge, never a rebase);
 3. re-derives the app's wire contract (`tools/upstream_contract.py`) and, when
    ports/paths/magics changed, regenerates `UpstreamContract.kt` and commits it;
-4. runs the app's unit tests and lint, builds the APK and uploads it as an artifact;
-5. opens or refreshes **one pull request** into `main`. The title starts with
+4. updates `v2/Cargo.lock` for open RustSec advisories that have a
+   semver-compatible fix, so upstream's Security Scanning passes on the PR;
+5. runs the app's unit tests and lint, builds the APK and uploads it as an artifact;
+6. opens or refreshes **one pull request** into `main`. The title starts with
    `[needs review]` when a decoded format changed or the build failed.
 
 Nothing is merged automatically. Review the PR and merge it with a **merge
-commit**. Merge conflicts make the run fail, and the job summary lists the
-conflicting files.
+commit**.
+
+The run stays green unless the workflow itself breaks. When something needs
+you (a merge conflict, a rejected push, a pull request that could not be
+opened), it opens an issue labelled `upstream-sync` with the details and a
+one-click link, and closes that issue once a sync PR is open again. Pushes
+and PRs try `UPSTREAM_SYNC_TOKEN` first and fall back to the built-in token.
 
 ## Releasing
 
@@ -36,8 +43,10 @@ The Releases page holds uSee releases only, each with an APK attached:
 
 - Upstream jobs that publish server releases (`ci.yml`), open submodule PRs
   every 6 hours (`update-submodules.yml`) or push traffic snapshots
-  (`clone-tracking.yml`) run only in `ruvnet/RuView`. Submodule bumps reach
-  this fork through the weekly upstream sync.
+  (`clone-tracking.yml`) run only in `ruvnet/RuView`, as does the *daily*
+  Rust audit in `security-scan.yml` (it still runs on every push and PR).
+  Submodule bumps and advisory fixes reach this fork through the weekly
+  upstream sync.
 - `.github/workflows/release-hygiene.yml` runs after CI and release runs on
   `main` and daily. It deletes every published release without an `.apk`
   asset, together with its tag, and keeps the newest `usee-v*` release marked

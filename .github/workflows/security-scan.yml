@@ -18,6 +18,9 @@ jobs:
   # so this job gates the PR and retains the exact machine-readable report.
   rust-audit:
     name: Rust Dependency Audit
+    # Forks patch advisories through the weekly upstream sync PR (which runs
+    # this job); a daily run there would only report upstream's open ones.
+    if: github.event_name != 'schedule' || github.repository == 'ruvnet/RuView'
     runs-on: ubuntu-latest
     permissions:
       contents: read
