@@ -171,11 +171,14 @@ jobs:
       - name: Push sync branch
         if: steps.merge.outputs.ok == 'true'
         id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # gh's credential helper reads GH_TOKEN at push time.
+          gh auth setup-git
           for token in "$SYNC_TOKEN" "$BUILTIN_TOKEN"; do
             [ -n "$token" ] || continue
-            auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$token" | base64 -w0)"
-            if git -c http.https://github.com/.extraheader="$auth" push --force origin "$SYNC_BRANCH"; then
+            if GH_TOKEN="$token" git push --force origin "$SYNC_BRANCH"; then
               echo "ok=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
