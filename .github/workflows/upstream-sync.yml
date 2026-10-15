@@ -264,9 +264,23 @@ jobs:
           note="$RUNNER_TEMP/attention.md"
           [ -s "$note" ] || echo "The sync run stopped before a pull request was opened. Details: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" > "$note"
           printf '\nRun: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$note"
-          gh label create upstream-sync --color FBCA04 --description "Weekly upstream sync" --force > /dev/null 2>&1 || true
+          echo "::warning title=$title::$(head -n 1 "$note")"
+          # Issues are disabled in forks by default; a comment on the base
+          # branch commit notifies the owner the same way.
           if [ -n "$open" ]; then
-            gh issue comment "$open" --body-file "$note"
-          else
-            gh issue create --title "$title" --label upstream-sync --body-file "$note"
+            gh issue comment "$open" --body-file "$note" && exit 0
+          elif gh label create upstream-sync --color FBCA04 --description "Weekly upstream sync" --force > /dev/null 2>&1 \
+              && gh issue create --title "$title" --label upstream-sync --body-file "$note"; then
+            exit 0
           fi
+          marker="<!-- upstream-sync ${{ steps.upstream.outputs.short }} -->"
+          sha="$GITHUB_SHA"
+          if gh api "repos/$GITHUB_REPOSITORY/commits/$sha/comments" --jq '.[].body' 2>/dev/null | grep -qF "$marker"; then
+            echo "Already reported on $sha."
+            exit 0
+          fi
+          printf '## %s\n\n' "$title" > "$RUNNER_TEMP/comment.md"
+          cat "$note" >> "$RUNNER_TEMP/comment.md"
+          printf '\n%s\n' "$marker" >> "$RUNNER_TEMP/comment.md"
+          gh api "repos/$GITHUB_REPOSITORY/commits/$sha/comments" -F "body=@$RUNNER_TEMP/comment.md" > /dev/null \
+            || echo "::warning::Could not post the report; see the run summary."
