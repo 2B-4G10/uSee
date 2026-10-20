@@ -33,7 +33,7 @@ jobs:
   prune:
     # The upstream project publishes server and firmware releases without APKs.
     if: github.repository != 'ruvnet/RuView'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
