@@ -47,7 +47,8 @@ The Releases page holds uSee releases only, each with an APK attached:
   every 6 hours (`update-submodules.yml`), push traffic snapshots
   (`clone-tracking.yml`), publish `ruvnet` Docker images
   (`sensing-server-docker.yml`, `nvsim-server-docker.yml`) or deploy demo
-  sites to `gh-pages` (`*-pages.yml`) run only in `ruvnet/RuView`, as does the *daily*
+  sites and API docs to `gh-pages` (`*-pages.yml`, `ci.yml`) run only in
+  `ruvnet/RuView`, as does the *daily*
   Rust audit in `security-scan.yml` (it still runs on every push and PR).
   Submodule bumps and advisory fixes reach this fork through the weekly
   upstream sync.

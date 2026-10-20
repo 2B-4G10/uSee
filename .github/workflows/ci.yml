@@ -493,6 +493,8 @@ jobs:
         "
 
     - name: Deploy to GitHub Pages
+      # Forks would push upstream's API docs to an unrelated gh-pages branch.
+      if: github.repository == 'ruvnet/RuView'
       uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453
       continue-on-error: true   # openapi generation above is the real validation; deploy is best-effort (Pages may be disabled)
       with:
