@@ -24,7 +24,7 @@ on:
 
 jobs:
   mqtt-integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Ubuntu 26.04 mosquitto cannot read its config from /tmp
     timeout-minutes: 20
 
     # NB: we don't use a `services:` mosquitto container here because the

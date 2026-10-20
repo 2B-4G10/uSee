@@ -39,7 +39,7 @@ jobs:
   sync:
     # Never run in the upstream repository itself.
     if: github.repository != 'ruvnet/RuView'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
       SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
