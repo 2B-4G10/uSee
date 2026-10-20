@@ -54,6 +54,25 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Reports whether UPSTREAM_SYNC_TOKEN may open pull requests. An empty
+      # pull request is rejected with 422 when it may and 403 when it may not,
+      # so nothing is created.
+      - name: Check UPSTREAM_SYNC_TOKEN
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::UPSTREAM_SYNC_TOKEN is not set; pushes and pull requests use the built-in token."
+            exit 0
+          fi
+          status="$(gh api -X POST "repos/$GITHUB_REPOSITORY/pulls" -f title=permission-probe --include 2>/dev/null | head -n 1 | awk '{print $2}')" || true
+          case "$status" in
+            422) echo "UPSTREAM_SYNC_TOKEN can open pull requests." >> "$GITHUB_STEP_SUMMARY" ;;
+            401) echo "::warning::UPSTREAM_SYNC_TOKEN is invalid or expired; create a new token and update the secret." ;;
+            403) echo "::warning::UPSTREAM_SYNC_TOKEN cannot open pull requests; give it Pull requests: Read and write." ;;
+            *) echo "::warning::Could not check UPSTREAM_SYNC_TOKEN (HTTP ${status:-none})." ;;
+          esac
+
       - name: Fetch upstream
         id: upstream
         run: |
