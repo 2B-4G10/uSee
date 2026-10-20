@@ -126,7 +126,9 @@ jobs:
             exit 0
           fi
           cargo audit --file v2/Cargo.lock --json > "$RUNNER_TEMP/audit.json" 2>/dev/null
-          pkgs="$(jq -r '[.vulnerabilities.list[].package.name] | unique | .[]' "$RUNNER_TEMP/audit.json" 2>/dev/null)"
+          # name@version: a crate can appear in several versions, and a bare
+          # name is then ambiguous to `cargo update -p`.
+          pkgs="$(jq -r '[.vulnerabilities.list[].package | "\(.name)@\(.version)"] | unique | .[]' "$RUNNER_TEMP/audit.json" 2>/dev/null)"
           [ -n "$pkgs" ] || exit 0
           git submodule update --init --depth 1 --quiet || echo "::warning::some submodules could not be fetched"
           for pkg in $pkgs; do

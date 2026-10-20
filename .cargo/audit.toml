@@ -23,4 +23,11 @@ ignore = [
     "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
+
+    # webpki-roots 0.26.11 — RUSTSEC-2026-0381 (distrusted emSign roots).
+    # 0.26.11 is a semver-compatibility shim that re-exports webpki-roots 1.x;
+    # the lockfile pins 1.x at >= 1.0.10, which carries the fixed root set.
+    # No 0.26 release lists a fix, so the shim stays flagged until ureq 2.x
+    # (cog-person-count, cog-pose-estimation, ruview-auth) moves to 1.x.
+    "RUSTSEC-2026-0381",
 ]
