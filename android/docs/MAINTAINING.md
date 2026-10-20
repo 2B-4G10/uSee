@@ -62,6 +62,14 @@ The Releases page holds uSee releases only, each with an APK attached:
   **delete release** removes one named release and its tag, such as a
   superseded `usee-v*` build.
 
+### Runners
+
+The app's workflows run on `ubuntu-26.04`. Upstream jobs follow
+`ubuntu-latest` (Ubuntu 26.04 from November 2026), except jobs that fail on
+26.04 and stay on `ubuntu-24.04`: the Espressif QEMU build and the two jobs
+that use it in `firmware-qemu.yml`, and `mqtt-integration.yml`. Move them back
+once upstream fixes them.
+
 ## One-time repository setup (owner)
 
 These are GitHub settings and must be set in the web UI.
