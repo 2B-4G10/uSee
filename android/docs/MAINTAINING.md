@@ -8,12 +8,15 @@ with the uSee Android app added under `android/`.
 `.github/workflows/upstream-sync.yml` runs **every Monday at 04:47 UTC** (or
 manually from the Actions tab). It:
 
-1. fetches `ruvnet/RuView` `main` and stops if nothing is new;
+1. fetches `ruvnet/RuView` `main`; if nothing is new, it only does step 4
+   and opens a PR when that changed the lockfile;
 2. merges it into the `upstream-sync` branch (a merge, never a rebase);
 3. re-derives the app's wire contract (`tools/upstream_contract.py`) and, when
    ports/paths/magics changed, regenerates `UpstreamContract.kt` and commits it;
 4. updates `v2/Cargo.lock` for open RustSec advisories that have a
-   semver-compatible fix, so upstream's Security Scanning passes on the PR;
+   semver-compatible fix, so upstream's Security Scanning passes on the PR.
+   Advisories with no such fix that do not reach this code are listed, with
+   the reason, in the root `.cargo/audit.toml`;
 5. runs the app's unit tests and lint, builds the APK and uploads it as an artifact;
 6. opens or refreshes **one pull request** into `main`. The title starts with
    `[needs review]` when a decoded format changed or the build failed.
