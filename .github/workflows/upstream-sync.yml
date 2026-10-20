@@ -4,7 +4,8 @@ name: Upstream sync
 # contract the Android app depends on, rebuild and test the app, and open (or
 # refresh) a pull request into main. Nothing is merged automatically.
 # Known RustSec advisories in v2/Cargo.lock are patched in the same PR when a
-# semver-compatible fix exists.
+# semver-compatible fix exists. When upstream has nothing new, the run still
+# patches advisories and opens a PR only if the lockfile changed.
 #
 # The run itself only fails on an internal error. Anything that needs the
 # owner (merge conflict, rejected push, PR that cannot be opened) is reported
@@ -68,12 +69,16 @@ jobs:
           echo "Upstream ${UPSTREAM_REPO}@${sha:0:9}: $behind new commit(s)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Merge upstream into sync branch
-        if: steps.upstream.outputs.behind != '0'
         id: merge
         run: |
           git config user.name "${{ github.repository_owner }}"
           git config user.email "${{ github.repository_owner_id }}+${{ github.repository_owner }}@users.noreply.github.com"
           git checkout -B "$SYNC_BRANCH"
+          if [ "${{ steps.upstream.outputs.behind }}" = 0 ]; then
+            echo "Nothing new upstream; checking Rust advisories only." >> "$GITHUB_STEP_SUMMARY"
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if git merge --no-ff --no-edit -m "chore: sync ${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}" "upstream/$UPSTREAM_BRANCH"; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
@@ -140,17 +145,28 @@ jobs:
             git commit -m "fix(deps): patch RustSec advisories in v2/Cargo.lock"
           fi
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - name: Check for changes to propose
         if: steps.merge.outputs.ok == 'true'
+        id: changes
+        run: |
+          if [ "$(git rev-list --count "$GITHUB_SHA..HEAD")" -gt 0 ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing to propose: ${BASE} is up to date with upstream and has no fixable advisories." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        if: steps.changes.outputs.any == 'true'
         with:
           distribution: temurin
           java-version: "21"
 
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        if: steps.merge.outputs.ok == 'true'
+        if: steps.changes.outputs.any == 'true'
 
       - name: Test and build the app
-        if: steps.merge.outputs.ok == 'true'
+        if: steps.changes.outputs.any == 'true'
         id: build
         working-directory: android
         run: |
@@ -169,7 +185,7 @@ jobs:
           retention-days: 14
 
       - name: Push sync branch
-        if: steps.merge.outputs.ok == 'true'
+        if: steps.changes.outputs.any == 'true'
         id: push
         env:
           GH_TOKEN: ${{ github.token }}
@@ -197,6 +213,7 @@ jobs:
         env:
           SEVERITY: ${{ steps.contract.outputs.severity }}
           BUILD_OK: ${{ steps.build.outputs.ok }}
+          BEHIND: ${{ steps.upstream.outputs.behind }}
         run: |
           body="$RUNNER_TEMP/body.md"
           case "$SEVERITY" in
@@ -205,7 +222,11 @@ jobs:
             *) verdict="**Needs review:** a wire format the app decodes changed." ;;
           esac
           {
-            echo "Weekly merge of [${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}](https://github.com/${UPSTREAM_REPO}/commit/${{ steps.upstream.outputs.sha }}) (${{ steps.upstream.outputs.behind }} new commits)."
+            if [ "$BEHIND" = 0 ]; then
+              echo "Upstream has nothing new since [${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}](https://github.com/${UPSTREAM_REPO}/commit/${{ steps.upstream.outputs.sha }}); this PR only patches Rust advisories."
+            else
+              echo "Weekly merge of [${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}](https://github.com/${UPSTREAM_REPO}/commit/${{ steps.upstream.outputs.sha }}) (${BEHIND} new commits)."
+            fi
             echo
             echo "- App contract: $verdict"
             echo "- App tests, lint and APK build: $([ "$BUILD_OK" = true ] && echo passed || echo '**failed**')"
@@ -217,6 +238,7 @@ jobs:
             echo "Merge with a **merge commit** (not squash) so upstream history stays shared."
           } > "$body"
           title="Weekly upstream sync: ${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}"
+          [ "$BEHIND" != 0 ] || title="Weekly maintenance: patch Rust advisories"
           if [ "$SEVERITY" = 4 ] || [ "$BUILD_OK" != true ]; then
             title="[needs review] $title"
           fi
@@ -248,7 +270,7 @@ jobs:
           echo "ok=false" >> "$GITHUB_OUTPUT"
 
       - name: Report to the owner
-        if: always() && steps.upstream.outputs.behind != '0'
+        if: always() && (steps.upstream.outputs.behind != '0' || steps.changes.outputs.any == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
           PR_OK: ${{ steps.pr.outputs.ok }}
