@@ -17,12 +17,21 @@ manually from the Actions tab). It:
    semver-compatible fix, so upstream's Security Scanning passes on the PR.
    Advisories with no such fix that do not reach this code are listed, with
    the reason, in the root `.cargo/audit.toml`;
-5. runs the app's unit tests and lint, builds the APK and uploads it as an artifact;
-6. opens or refreshes **one pull request** into `main`. The title starts with
-   `[needs review]` when a decoded format changed or the build failed.
+5. when anything that goes into the APK changed since the current version was
+   released (`android/app` except unit tests, the Gradle files and wrapper),
+   bumps the patch version (`versionCode` + 1, `x.y.z` → `x.y.z+1`);
+6. runs the app's unit tests and lint, builds the APK and uploads it as an artifact;
+7. opens or refreshes **one pull request** into `main`. The title starts with
+   `[needs review]` when a decoded format changed or the build failed, and
+   ends with `release uSee x.y.z` when step 5 bumped the version.
 
-Nothing is merged automatically. Review the PR and merge it with a **merge
-commit**.
+`.github/workflows/upstream-sync-merge.yml` checks that PR every hour and
+merges it with a merge commit when at least one check ran, every check passed
+or was skipped, the newest check is 20 minutes old, and the title does not
+start with `[needs review]`. A merge that bumped the version publishes the
+release (see below). When a check fails, it adds `[needs review]` to the
+title and comments with the failed checks; the PR then waits for you. Fix it
+and merge by hand with a **merge commit**.
 
 The run stays green unless the workflow itself breaks. When something needs
 you (a merge conflict, a rejected push, a pull request that could not be
@@ -33,6 +42,9 @@ the latest `main` commit instead (once per upstream revision). Pushes and PRs
 try `UPSTREAM_SYNC_TOKEN` first and fall back to the built-in token.
 
 ## Releasing
+
+The weekly sync releases on its own when the APK changed (see above). To
+release by hand:
 
 1. Bump `versionCode` and `versionName` in `app/build.gradle.kts`.
 2. Merge to `main`. `.github/workflows/usee-release.yml` notices the new

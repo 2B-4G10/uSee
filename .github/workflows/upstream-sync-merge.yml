@@ -1,0 +1,111 @@
+name: Upstream sync merge
+
+# Merges the weekly sync pull request (upstream-sync.yml) into main once it is
+# safe, so a week that needs a new APK releases it without anyone clicking:
+#  - the title does not start with [needs review] (changed wire format or a
+#    failed app build) and the PR is not a draft;
+#  - at least one check ran, every check has finished at least 20 minutes
+#    after the last push, and none failed.
+# A failed check marks the PR [needs review] with the list of failures, and it
+# then waits for the owner. The merge uses UPSTREAM_SYNC_TOKEN, so the push to
+# main starts the uSee release; with the built-in token, which starts no
+# workflows, the release is dispatched explicitly.
+on:
+  schedule:
+    - cron: "17 * * * *" # hourly
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.repository != 'ruvnet/RuView'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+      BUILTIN_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      BASE: ${{ github.event.repository.default_branch }}
+      SETTLE_MINUTES: 20
+    steps:
+      - name: Merge the sync pull request when every check passed
+        run: |
+          pr="$(gh pr list -R "$REPO" --head upstream-sync --base "$BASE" --state open \
+            --json number,title,isDraft,headRefOid --jq '.[0] // empty')"
+          if [ -z "$pr" ]; then
+            echo "No open sync pull request." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          number="$(jq -r .number <<< "$pr")"
+          title="$(jq -r .title <<< "$pr")"
+          sha="$(jq -r .headRefOid <<< "$pr")"
+          url="${GITHUB_SERVER_URL}/${REPO}/pull/${number}"
+          case "$title" in
+            "[needs review]"*)
+              echo "$url is marked [needs review]; it waits for the owner." >> "$GITHUB_STEP_SUMMARY"
+              exit 0 ;;
+          esac
+          if [ "$(jq -r .isDraft <<< "$pr")" = true ]; then
+            echo "$url is a draft; it waits for the owner." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          runs="$RUNNER_TEMP/runs.json"
+          gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" \
+            --jq '.check_runs[] | {name, status, conclusion, started_at}' | jq -s . > "$runs"
+          total="$(jq length "$runs")"
+          pending="$(jq '[.[] | select(.status != "completed")] | length' "$runs")"
+          failed="$(jq -r '.[] | select(.status == "completed" and (.conclusion | IN("success", "skipped", "neutral") | not)) | "- \(.name): \(.conclusion)"' "$runs")"
+          newest="$(jq -r '[.[].started_at | select(. != null)] | max // empty' "$runs")"
+          # Commit statuses from external services count as checks too.
+          status="$(gh api "repos/$REPO/commits/$sha/status" --jq 'if .total_count == 0 then "none" else .state end')"
+
+          if [ "$total" = 0 ]; then
+            echo "No checks have run on $url yet; not merging." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$status" = failure ] || [ "$status" = error ]; then
+            failed="$(printf '%s\n- commit status: %s' "$failed" "$status")"
+          fi
+          if [ -n "$failed" ]; then
+            gh pr edit "$number" -R "$REPO" --title "[needs review] $title"
+            printf 'Not merged automatically: these checks failed on %s.\n\n%s\n\nFix them or merge by hand with a merge commit.\n' \
+              "$sha" "$failed" > "$RUNNER_TEMP/failed.md"
+            gh pr comment "$number" -R "$REPO" --body-file "$RUNNER_TEMP/failed.md"
+            cat "$RUNNER_TEMP/failed.md" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$pending" != 0 ] || [ "$status" = pending ]; then
+            echo "$url: $pending of $total checks still running; checking again next hour." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Workflows can start a few minutes after a push; wait until the
+          # newest check is old enough that none are still to come.
+          age=$(( ($(date +%s) - $(date -d "$newest" +%s)) / 60 ))
+          if [ "$age" -lt "$SETTLE_MINUTES" ]; then
+            echo "$url: all $total checks passed; merging once they are ${SETTLE_MINUTES} minutes old." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          for token in "$SYNC_TOKEN" "$BUILTIN_TOKEN"; do
+            [ -n "$token" ] || continue
+            if GH_TOKEN="$token" gh pr merge "$number" -R "$REPO" --merge --match-head-commit "$sha"; then
+              echo "Merged $url after $total checks passed." >> "$GITHUB_STEP_SUMMARY"
+              if [ "$token" = "$BUILTIN_TOKEN" ] \
+                  && gh pr view "$number" -R "$REPO" --json files --jq '.files[].path' | grep -qx android/app/build.gradle.kts; then
+                gh workflow run usee-release.yml -R "$REPO" --ref "$BASE"
+                echo "Started the uSee release." >> "$GITHUB_STEP_SUMMARY"
+              fi
+              exit 0
+            fi
+          done
+          echo "::warning::Could not merge $url; merge it by hand with a merge commit."

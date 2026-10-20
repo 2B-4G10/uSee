@@ -2,10 +2,14 @@ name: Upstream sync
 
 # Weekly: merge ruvnet/RuView main into a sync branch, re-derive the wire
 # contract the Android app depends on, rebuild and test the app, and open (or
-# refresh) a pull request into main. Nothing is merged automatically.
+# refresh) a pull request into main. upstream-sync-merge.yml merges that PR
+# once every check passed, unless it is marked [needs review].
 # Known RustSec advisories in v2/Cargo.lock are patched in the same PR when a
 # semver-compatible fix exists. When upstream has nothing new, the run still
 # patches advisories and opens a PR only if the lockfile changed.
+# When anything that goes into the APK changed since the current version was
+# released, the PR also bumps the patch version, so merging it publishes a
+# new build (usee-release.yml).
 #
 # The run itself only fails on an internal error. Anything that needs the
 # owner (merge conflict, rejected push, PR that cannot be opened) is reported
@@ -166,6 +170,34 @@ jobs:
             git commit -m "fix(deps): patch RustSec advisories in v2/Cargo.lock"
           fi
 
+      # The APK is built only from these paths; upstream server code and
+      # v2/Cargo.lock never change it. Unit tests alone do not need a release.
+      - name: Bump the app version if the APK changed
+        if: steps.merge.outputs.ok == 'true'
+        id: bump
+        run: |
+          gradle=android/app/build.gradle.kts
+          name="$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' "$gradle")"
+          code="$(sed -n 's/^ *versionCode = \([0-9]*\)$/\1/p' "$gradle")"
+          tag="usee-v$name"
+          if ! git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            echo "uSee $name is not released yet; usee-release.yml publishes it when it reaches ${BASE}." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if git diff --quiet "$tag" HEAD -- android/app android/gradle android/build.gradle.kts \
+              android/settings.gradle.kts android/gradle.properties android/gradlew android/gradlew.bat \
+              ':(exclude)android/app/src/test'; then
+            echo "The APK is unchanged since uSee $name; no release needed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          next="${name%.*}.$(( ${name##*.} + 1 ))"
+          sed -i -e "s/^\( *versionCode = \)$code\$/\1$(( code + 1 ))/" \
+            -e "s/^\( *versionName = \)\"$name\"\$/\1\"$next\"/" "$gradle"
+          git add "$gradle"
+          git commit -m "chore(android): release uSee $next"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "The APK changed since uSee $name; this sync releases uSee $next." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Check for changes to propose
         if: steps.merge.outputs.ok == 'true'
         id: changes
@@ -235,6 +267,7 @@ jobs:
           SEVERITY: ${{ steps.contract.outputs.severity }}
           BUILD_OK: ${{ steps.build.outputs.ok }}
           BEHIND: ${{ steps.upstream.outputs.behind }}
+          RELEASE: ${{ steps.bump.outputs.version }}
         run: |
           body="$RUNNER_TEMP/body.md"
           case "$SEVERITY" in
@@ -244,7 +277,7 @@ jobs:
           esac
           {
             if [ "$BEHIND" = 0 ]; then
-              echo "Upstream has nothing new since [${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}](https://github.com/${UPSTREAM_REPO}/commit/${{ steps.upstream.outputs.sha }}); this PR only patches Rust advisories."
+              echo "Upstream has nothing new since [${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}](https://github.com/${UPSTREAM_REPO}/commit/${{ steps.upstream.outputs.sha }}); this PR carries only the maintenance below."
             else
               echo "Weekly merge of [${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}](https://github.com/${UPSTREAM_REPO}/commit/${{ steps.upstream.outputs.sha }}) (${BEHIND} new commits)."
             fi
@@ -252,14 +285,20 @@ jobs:
             echo "- App contract: $verdict"
             echo "- App tests, lint and APK build: $([ "$BUILD_OK" = true ] && echo passed || echo '**failed**')"
             echo "- Rust advisories: $(head -n 1 "$RUNNER_TEMP/advisories.md")"
+            if [ -n "$RELEASE" ]; then
+              echo "- Release: the APK changed, so merging publishes **uSee $RELEASE**."
+            else
+              echo "- Release: none needed, the APK is unchanged."
+            fi
             echo "- Run and APK artifact: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
             cat "$RUNNER_TEMP/contract.md"
             echo
-            echo "Merge with a **merge commit** (not squash) so upstream history stays shared."
+            echo "Merged automatically with a merge commit once every check passes, unless the title starts with \`[needs review]\`. To merge by hand, use a **merge commit** (not squash) so upstream history stays shared."
           } > "$body"
           title="Weekly upstream sync: ${UPSTREAM_REPO}@${{ steps.upstream.outputs.short }}"
-          [ "$BEHIND" != 0 ] || title="Weekly maintenance: patch Rust advisories"
+          [ "$BEHIND" != 0 ] || title="Weekly maintenance"
+          [ -z "$RELEASE" ] || title="$title, release uSee $RELEASE"
           if [ "$SEVERITY" = 4 ] || [ "$BUILD_OK" != true ]; then
             title="[needs review] $title"
           fi
